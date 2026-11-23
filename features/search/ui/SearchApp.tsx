@@ -16,7 +16,10 @@ import {
 } from "@/features/search/model/tab-folder-collapse";
 import type { ForgeIssueSortMode } from "@/features/search/model/ranking";
 import { pluralize } from "@/shared/text";
+import { applyTodoOrder } from "@/features/todos/model/todo";
+import { visibleTodoTabs } from "@/features/todos/model/todo-folders";
 import { TodoNavigator } from "@/features/todos/ui/TodoNavigator";
+import { useTodoFolders } from "@/features/todos/ui/useTodoFolders";
 import { useTodoOrder } from "@/features/todos/ui/useTodoOrder";
 import { TimersDock } from "@/features/timers/ui/TimersDock";
 import {
@@ -142,6 +145,7 @@ export function SearchApp({
   const revealSeen = useRef(reveal);
   const [forgeSortMode, setForgeSortMode] = useState<ForgeIssueSortMode>("asc");
   const todoOrder = useTodoOrder(cache);
+  const todoFolders = useTodoFolders(cache);
   const [forgeKindFilter, setForgeKindFilter] = useState<ForgeKindFilter>("all");
   const forgeCollapse = useForgeCollapse(cache);
   const tabFolderCollapse = useStoredCollapse(TAB_FOLDER_COLLAPSED_STORAGE_KEY, cache);
@@ -210,6 +214,10 @@ export function SearchApp({
   const todoActions = useTodoActions({ setTodos, setStatuses });
   const statusActions = useStatusActions({ setStatuses });
   const todoTabs = results.todoTabs;
+  const keyboardTodoTabs = useMemo(
+    () => visibleTodoTabs(todoTabs, todoFolders.state, results.todoNavigatorQuery.active),
+    [results.todoNavigatorQuery.active, todoFolders.state, todoTabs],
+  );
 
   useCloseOnOutsideClick(contextMenu !== null, "[data-testid='zen-tab-context-menu']", () =>
     setContextMenu(null),
@@ -349,7 +357,9 @@ export function SearchApp({
   // detection flag here reserved a second column before any issues existed,
   // so the panel jumped the moment the snapshot arrived.
   const showForgeColumn = displaySettings.forgeTree && results.forgeIssueEntries.length > 0;
-  const showTodoColumn = displaySettings.todos && results.allTodoTabs.length > 0;
+  const showTodoColumn =
+    displaySettings.todos &&
+    (results.allTodoTabs.length > 0 || todoFolders.state.folders.length > 0);
   // Fullscreen has room for the soonest LCD and the next two. Spotlight keeps
   // timers behind the header key so the card does not grow a third pane.
   const showTimersDock =
@@ -363,6 +373,7 @@ export function SearchApp({
       forgeCollapse.loaded &&
       tabFolderCollapse.loaded &&
       todoOrder.loaded &&
+      todoFolders.loaded &&
       (setupDone ? snapshotLoaded : true),
   );
 
@@ -373,7 +384,7 @@ export function SearchApp({
     pageJump,
     items: results.items,
     navigatorEntries: results.navigatorEntries,
-    todoTabs,
+    todoTabs: keyboardTodoTabs,
     forgeNavigatorQuery: results.forgeNavigatorQuery,
     todoNavigatorQuery: results.todoNavigatorQuery,
     bestForgeIndex: results.bestForgeIndex,
@@ -833,6 +844,7 @@ export function SearchApp({
                   <TodoNavigator
                     tabs={todoTabs}
                     allTabs={results.allTodoTabs}
+                    folders={todoFolders.state}
                     statuses={statuses}
                     statusMenuTabId={statusMenu?.tabId ?? null}
                     truncate={displaySettings.truncateIssueTitles}
@@ -854,15 +866,30 @@ export function SearchApp({
                     }}
                     onOpenStatusMenu={toggleStatusMenu}
                     onContextMenu={openContextMenu}
+                    onFoldersChange={todoFolders.setState}
                     onReorder={
                       results.todoNavigatorQuery.active
                         ? undefined
                         : (ids) => {
-                            todoOrder.setOrder(ids);
-                            const selected = todoTabs[navigation.selectedTodoIndex];
+                            const groupedIds = todoFolders.state.folders.flatMap(
+                              (folder) => todoFolders.state.members[folder.id] ?? [],
+                            );
+                            const nextOrder =
+                              groupedIds.length > 0
+                                ? [...groupedIds.filter((id) => !ids.includes(id)), ...ids]
+                                : ids;
+                            todoOrder.setOrder(nextOrder);
+                            const selected = keyboardTodoTabs[navigation.selectedTodoIndex];
                             const selectedId = selected ? tabBrowserId(selected) : undefined;
                             if (selectedId === undefined) return;
-                            const nextIndex = ids.indexOf(selectedId);
+                            const nextVisible = visibleTodoTabs(
+                              applyTodoOrder(todoTabs, nextOrder),
+                              todoFolders.state,
+                              false,
+                            );
+                            const nextIndex = nextVisible.findIndex(
+                              (tab) => tabBrowserId(tab) === selectedId,
+                            );
                             if (nextIndex >= 0) {
                               navigation.setSelectedTodoIndex(nextIndex);
                             }

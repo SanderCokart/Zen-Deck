@@ -3,7 +3,8 @@ import * as v from "valibot";
 /**
  * The storage.local keys that hold user settings, and so go into the backup.
  * Tab-bound data (timers, last-opened times) stays out: tab IDs do not outlive
- * the session, so restoring it would attach it to the wrong tabs.
+ * the session, so restoring it would attach it to the wrong tabs. Todo folder
+ * names are user-created, so they come back; leftover member IDs are ignored.
  */
 export const BACKED_UP_STORAGE_KEYS = [
   "displaySettings",
@@ -11,6 +12,7 @@ export const BACKED_UP_STORAGE_KEYS = [
   "essentialTabNames",
   "mcpBridgeToken",
   "complexitySetupDone",
+  "todoFolders",
 ] as const;
 
 const BACKUP_VERSION = 1;

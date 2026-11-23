@@ -43,11 +43,19 @@ vi.mock("motion/react", async () => {
         onReorder?: (ids: number[]) => void;
         className?: string;
         class?: string;
+        "data-testid"?: string;
+        "data-todo-ungrouped"?: string;
+        "data-todo-drop-folder"?: string;
       }) => {
         motionReorder.onReorder = props.onReorder;
         return h(
           props.as ?? "div",
-          { class: props.class ?? props.className, "data-testid": "zen-todo-list" },
+          {
+            class: props.class ?? props.className,
+            "data-testid": props["data-testid"] ?? "zen-todo-list",
+            "data-todo-ungrouped": props["data-todo-ungrouped"],
+            "data-todo-drop-folder": props["data-todo-drop-folder"],
+          },
           props.children as never,
         );
       },
@@ -1378,6 +1386,81 @@ describe("SearchApp", () => {
       expect(rows[1]?.textContent).toContain("First tab");
     });
     expect(browser.storage.local.set).toHaveBeenCalledWith({ todoOrder: [2, 1] });
+
+    render(null, root);
+    root.remove();
+  });
+
+  it("creates a persistent todo folder and drops a todo into it", async () => {
+    const { root } = mountSearchApp(
+      vi.fn(),
+      tabs.map((tab) => ({ ...tab, active: false })),
+      "overlay",
+      undefined,
+      [],
+      [
+        { tabId: 1, status: "todo" },
+        { tabId: 2, status: "todo" },
+      ],
+    );
+
+    await vi.waitFor(() =>
+      expect(root.querySelector("[data-testid='zen-todo-folder-add']")).not.toBeNull(),
+    );
+    root.querySelector<HTMLButtonElement>("[data-testid='zen-todo-folder-add']")!.click();
+    await vi.waitFor(() =>
+      expect(root.querySelector("[data-testid='zen-todo-folder']")?.textContent).toContain(
+        "Folder",
+      ),
+    );
+    expect(browser.storage.local.set).toHaveBeenCalledWith(
+      expect.objectContaining({
+        todoFolders: expect.objectContaining({
+          folders: [expect.objectContaining({ name: "Folder", collapsed: false })],
+        }),
+      }),
+    );
+
+    const drop = root.querySelector<HTMLElement>("[data-todo-drop-folder]")!;
+    const hit = vi.spyOn(document, "elementFromPoint").mockReturnValue(drop);
+    const row = root.querySelector<HTMLElement>("[data-testid='zen-todo-row']")!;
+    motionReorder.dragStart = vi.fn();
+    row.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        button: 0,
+        pointerId: 1,
+        bubbles: true,
+        clientX: 10,
+        clientY: 10,
+      }),
+    );
+    row.dispatchEvent(
+      new PointerEvent("pointermove", {
+        button: 0,
+        pointerId: 1,
+        bubbles: true,
+        clientX: 10,
+        clientY: 24,
+      }),
+    );
+    row.dispatchEvent(
+      new PointerEvent("pointerup", {
+        button: 0,
+        pointerId: 1,
+        bubbles: true,
+        clientX: 10,
+        clientY: 24,
+      }),
+    );
+    await vi.waitFor(() => {
+      const memberIds = vi.mocked(browser.storage.local.set).mock.calls.flatMap(([value]) => {
+        const members = (value as { todoFolders?: { members?: Record<string, number[]> } })
+          .todoFolders?.members;
+        return members === undefined ? [] : Object.values(members).flat();
+      });
+      expect(memberIds).toContain(1);
+    });
+    hit.mockRestore();
 
     render(null, root);
     root.remove();

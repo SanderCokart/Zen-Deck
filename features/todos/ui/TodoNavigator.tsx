@@ -1,4 +1,4 @@
-import { useRef, useState } from "preact/hooks";
+import { useMemo, useRef, useState } from "preact/hooks";
 import { Reorder, useDragControls } from "motion/react";
 import { entryTextClass } from "@/features/search/ui/lib/styles";
 import { hostname } from "@/features/search/ui/lib/format";
@@ -7,8 +7,26 @@ import { PrefixHint } from "@/features/search/ui/components/PrefixHint";
 import { TODO_NAVIGATOR_PREFIXES } from "@/features/search/model/ranking";
 import { StatusButton } from "@/features/status/ui/StatusButton";
 import { TRAFFIC_LIGHT_OPTIONS } from "@/features/status/model/status";
-import { pointerMovedPastDragThreshold } from "@/features/todos/model/todo-pointer";
+import {
+  pointerMovedPastDragThreshold,
+  todoDropTargetAt,
+} from "@/features/todos/model/todo-pointer";
 import { todoTabIdsToClear, type TodoClearFilter } from "@/features/todos/model/todo";
+import {
+  addTodoFolder,
+  folderIdForTab,
+  moveTodoToFolder,
+  removeTodoFolder,
+  renameTodoFolder,
+  setFolderMembers,
+  todoColumnSections,
+  toggleTodoFolder,
+  ungroupedTodoTabs,
+  visibleTodoTabs,
+  EMPTY_TODO_FOLDER_STATE,
+  type TodoFolderState,
+} from "@/features/todos/model/todo-folders";
+import { TodoFolderHeader } from "@/features/todos/ui/TodoFolderHeader";
 import { statusRowClass } from "@/features/status/ui/traffic-light";
 import {
   formatTabDisplayTitle,
@@ -30,7 +48,7 @@ import { scrollIntoViewWhen } from "@/shared/ui/lib/scroll-into-view";
  * sets the tab's status color, and right-clicking opens the tab context menu.
  * The header's "Clear" menu marks every todo, or every todo of one status
  * color, done after a confirmation, and can close those tabs as well. Only
- * rendered while there is at least one todo.
+ * rendered while there is at least one todo or folder.
  */
 type PendingClear = { filter: TodoClearFilter; close: boolean };
 
@@ -157,6 +175,8 @@ function ReorderTodoRow({
   statusMenuTabId,
   statuses,
   onDraggingChange,
+  onDropHover,
+  onDrop,
 }: {
   tab: TabInfo;
   index: number;
@@ -170,6 +190,8 @@ function ReorderTodoRow({
   statusMenuTabId: number | null;
   statuses: Map<number, TrafficLight>;
   onDraggingChange: (dragging: boolean) => void;
+  onDropHover?: (point: { x: number; y: number }) => void;
+  onDrop?: (tabId: number, point: { x: number; y: number }) => void;
 }) {
   const skipClick = useRef(false);
   const origin = useRef<{ x: number; y: number } | null>(null);
@@ -194,6 +216,9 @@ function ReorderTodoRow({
         }
       }}
       onPointerMove={(event: PointerEvent) => {
+        if (skipClick.current) {
+          onDropHover?.({ x: event.clientX, y: event.clientY });
+        }
         if (origin.current === null || skipClick.current) return;
         if (
           !pointerMovedPastDragThreshold(origin.current, { x: event.clientX, y: event.clientY })
@@ -206,8 +231,11 @@ function ReorderTodoRow({
         onDraggingChange(true);
         dragControls.start(event);
       }}
-      onPointerUp={() => {
+      onPointerUp={(event: PointerEvent) => {
         origin.current = null;
+        if (skipClick.current && tabId !== undefined) {
+          onDrop?.(tabId, { x: event.clientX, y: event.clientY });
+        }
         onDraggingChange(false);
       }}
       onPointerCancel={() => {
@@ -259,6 +287,7 @@ function ReorderTodoRow({
 export function TodoNavigator({
   tabs,
   allTabs = tabs,
+  folders = EMPTY_TODO_FOLDER_STATE,
   statuses,
   statusMenuTabId,
   truncate,
@@ -270,11 +299,13 @@ export function TodoNavigator({
   onOpenStatusMenu,
   onContextMenu,
   onReorder,
+  onFoldersChange,
 }: {
   /** The rows to list: every todo, or the ones an "@" query matches. */
   tabs: TabInfo[];
   /** Every todo, whatever the query; the count and the "Clear" menu act on these. */
   allTabs?: TabInfo[];
+  folders?: TodoFolderState;
   statuses: Map<number, TrafficLight>;
   /** The tab whose status menu is open, if any. */
   statusMenuTabId: number | null;
@@ -290,26 +321,76 @@ export function TodoNavigator({
   onContextMenu: (tab: TabInfo, event: MouseEvent) => void;
   /** Motion Reorder callback with the new tab-id order. Left out while filtering. */
   onReorder?: (tabIds: number[]) => void;
+  onFoldersChange?: (next: TodoFolderState) => void;
 }) {
   // The omnibar is a <browser> in Zen's chrome, not a tab, so `window.confirm`
   // has nowhere to show and returns false: the confirmation lives in the column.
   const [pendingClear, setPendingClear] = useState<PendingClear | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [dropFolderId, setDropFolderId] = useState<string | null>(null);
+  const draggingTabId = useRef<number | null>(null);
+  const foldersRef = useRef(folders);
+  foldersRef.current = folders;
   const clearTooltip = useTooltip();
+  const folderTooltip = useTooltip();
   const clearMenu = useDropdown("[data-testid='zen-todo-clear-wrap']");
   const pendingTabIds =
     pendingClear === null ? [] : todoTabIdsToClear(allTabs, statuses, pendingClear.filter);
+  const filtering = onReorder === undefined;
+  const visible = useMemo(
+    () => visibleTodoTabs(tabs, folders, filtering),
+    [filtering, folders, tabs],
+  );
+  const selectedVisible = visible[selectedIndex];
+  const selectedId = selectedVisible === undefined ? undefined : tabBrowserId(selectedVisible);
   const reorderIds = tabBrowserIds(tabs);
   const canReorder = onReorder !== undefined && reorderIds.length === tabs.length;
+  const grouped = folders.folders.length > 0;
+  const looseTabs = grouped ? ungroupedTodoTabs(tabs, folders) : tabs;
+  const looseIds = tabBrowserIds(looseTabs);
+  const sections = useMemo(() => {
+    const all = todoColumnSections(tabs, folders);
+    if (!filtering) return all;
+    return all.filter((section) => section.kind === "loose" || section.tabs.length > 0);
+  }, [filtering, folders, tabs]);
 
   const listClass =
     "zen-scroll flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--zen-todo-gap)] overflow-x-hidden overflow-y-auto";
 
-  const rows = tabs.map((tab, index) => {
-    const selected = selectedIndex === index;
+  const indexOfTab = (tab: TabInfo) => {
     const tabId = tabBrowserId(tab);
+    return visible.findIndex((entry) => tabBrowserId(entry) === tabId);
+  };
+
+  const setDraggingState = (next: boolean, tabId?: number) => {
+    if (next && tabId !== undefined) draggingTabId.current = tabId;
+    if (!next) draggingTabId.current = null;
+    setDragging(next);
+    if (!next) setDropFolderId(null);
+  };
+
+  const hoverDrop = (point: { x: number; y: number }) => {
+    const target = todoDropTargetAt(point.x, point.y);
+    setDropFolderId(target && "folderId" in target ? target.folderId : null);
+  };
+
+  const dropTodo = (tabId: number, point: { x: number; y: number }) => {
+    if (onFoldersChange === undefined) return;
+    const currentFolders = foldersRef.current;
+    const target = todoDropTargetAt(point.x, point.y);
+    if (target === undefined) return;
+    const current = folderIdForTab(currentFolders, tabId) ?? null;
+    const nextId = "ungrouped" in target ? null : target.folderId;
+    if (nextId === current) return;
+    onFoldersChange(moveTodoToFolder(currentFolders, tabId, nextId));
+  };
+
+  const renderRow = (tab: TabInfo, reorder: boolean) => {
+    const tabId = tabBrowserId(tab);
+    const selected = tabId !== undefined && tabId === selectedId;
     const light = tabId === undefined ? undefined : statuses.get(tabId);
-    if (canReorder && tabId !== undefined) {
+    const index = indexOfTab(tab);
+    if (reorder && tabId !== undefined) {
       return (
         <ReorderTodoRow
           key={tabId}
@@ -324,7 +405,9 @@ export function TodoNavigator({
           onContextMenu={onContextMenu}
           statusMenuTabId={statusMenuTabId}
           statuses={statuses}
-          onDraggingChange={setDragging}
+          onDraggingChange={(next) => setDraggingState(next, tabId)}
+          onDropHover={hoverDrop}
+          onDrop={dropTodo}
         />
       );
     }
@@ -347,7 +430,9 @@ export function TodoNavigator({
           tab={tab}
           truncate={truncate}
           onActivate={onActivate}
-          onSelect={() => onSelect(index)}
+          onSelect={() => {
+            if (index >= 0) onSelect(index);
+          }}
           onDone={onDone}
           onOpenStatusMenu={onOpenStatusMenu}
           statusMenuTabId={statusMenuTabId}
@@ -355,7 +440,72 @@ export function TodoNavigator({
         />
       </div>
     );
-  });
+  };
+
+  const folderBlocks = sections
+    .filter((section) => section.kind === "folder")
+    .map((section) => {
+      if (section.kind !== "folder") return null;
+      const { folder } = section;
+      const memberIds = tabBrowserIds(section.tabs);
+      const open = !folder.collapsed || filtering;
+      const body = (
+        <>
+          {open && memberIds.length > 0 && canReorder ? (
+            <Reorder.Group
+              as="div"
+              axis="y"
+              values={memberIds}
+              onReorder={(ids: number[]) =>
+                onFoldersChange?.(setFolderMembers(folders, folder.id, ids))
+              }
+              className="flex flex-col gap-[var(--zen-todo-gap)]"
+              data-testid={`zen-todo-folder-items-${folder.id}`}
+              data-todo-drop-folder={folder.id}
+            >
+              {section.tabs.map((tab) => renderRow(tab, true))}
+            </Reorder.Group>
+          ) : (
+            open && (
+              <div
+                class="flex flex-col gap-[var(--zen-todo-gap)]"
+                data-todo-drop-folder={folder.id}
+              >
+                {section.tabs.map((tab) => renderRow(tab, false))}
+                {section.tabs.length === 0 && (
+                  <p class="text-zen-muted m-0 py-[var(--zen-space-2)] text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
+                    Drop todos here
+                  </p>
+                )}
+              </div>
+            )
+          )}
+        </>
+      );
+      const header = (
+        <TodoFolderHeader
+          name={folder.name}
+          open={open}
+          count={section.tabs.length}
+          dropActive={dropFolderId === folder.id}
+          onToggle={() => onFoldersChange?.(toggleTodoFolder(folders, folder.id))}
+          onRename={(name) => onFoldersChange?.(renameTodoFolder(folders, folder.id, name))}
+          onDelete={() => onFoldersChange?.(removeTodoFolder(folders, folder.id))}
+        />
+      );
+      return (
+        <div
+          key={folder.id}
+          class="flex flex-col gap-[var(--zen-todo-gap)]"
+          data-todo-drop-folder={folder.id}
+        >
+          {header}
+          {body}
+        </div>
+      );
+    });
+
+  const looseRows = (grouped ? looseTabs : tabs).map((tab) => renderRow(tab, canReorder));
 
   return (
     <aside
@@ -365,6 +515,11 @@ export function TodoNavigator({
       )}
       data-testid="zen-todo-column"
       data-dragging={dragging ? "true" : undefined}
+      onPointerUp={(event: PointerEvent) => {
+        const tabId = draggingTabId.current;
+        if (tabId === null) return;
+        dropTodo(tabId, { x: event.clientX, y: event.clientY });
+      }}
     >
       <div class="zs-head">
         <PrefixHint prefixes={TODO_NAVIGATOR_PREFIXES} column="todos" />
@@ -372,6 +527,24 @@ export function TodoNavigator({
         <span class="zs-head-rule" aria-hidden="true" />
         <span class="flex shrink-0 items-center gap-[var(--zen-space-2)]">
           <span class="text-zen-danger">{allTabs.length} to do</span>
+          {onFoldersChange !== undefined && (
+            <>
+              <button
+                type="button"
+                class="zs-key text-zen-subtle hover:text-zen-text h-[var(--zen-mini-key)] px-[var(--zen-space-3)] font-[inherit] text-[length:var(--zen-text-sm)] leading-none tracking-[0.04em] normal-case"
+                aria-label="New folder"
+                data-testid="zen-todo-folder-add"
+                {...tooltipTriggerProps(folderTooltip)}
+                onClick={() => {
+                  folderTooltip.hide();
+                  onFoldersChange(addTodoFolder(folders));
+                }}
+              >
+                Folder
+              </button>
+              <TooltipFor tooltip={folderTooltip} content="Create a folder for todos" />
+            </>
+          )}
           <>
             <span class="relative inline-flex items-center" data-testid="zen-todo-clear-wrap">
               <button
@@ -452,7 +625,7 @@ export function TodoNavigator({
           onCancel={() => setPendingClear(null)}
         />
       )}
-      {canReorder ? (
+      {canReorder && !grouped ? (
         <Reorder.Group
           as="div"
           axis="y"
@@ -461,16 +634,38 @@ export function TodoNavigator({
           className={cn(listClass, dragging && "select-none")}
           data-testid="zen-todo-list"
         >
-          {rows}
+          {looseRows}
         </Reorder.Group>
+      ) : canReorder && grouped ? (
+        <div class={cn(listClass, dragging && "select-none")} data-testid="zen-todo-list">
+          {folderBlocks}
+          <Reorder.Group
+            as="div"
+            axis="y"
+            values={looseIds}
+            onReorder={onReorder}
+            className="flex flex-col gap-[var(--zen-todo-gap)]"
+            data-testid="zen-todo-ungrouped"
+            data-todo-ungrouped=""
+          >
+            {looseTabs.map((tab) => renderRow(tab, true))}
+          </Reorder.Group>
+        </div>
       ) : (
         <div class={listClass} data-testid="zen-todo-list">
-          {tabs.length === 0 && (
+          {tabs.length === 0 && folders.folders.length === 0 && (
             <p class="text-zen-muted m-0 py-[var(--zen-space-3)] text-center text-[length:var(--zen-text-sm)]">
               No matching todos.
             </p>
           )}
-          {rows}
+          {grouped ? (
+            <>
+              {folderBlocks}
+              <div data-todo-ungrouped="">{looseTabs.map((tab) => renderRow(tab, false))}</div>
+            </>
+          ) : (
+            looseRows
+          )}
         </div>
       )}
     </aside>
