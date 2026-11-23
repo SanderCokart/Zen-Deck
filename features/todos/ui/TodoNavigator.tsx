@@ -462,64 +462,52 @@ export function TodoNavigator({
       const memberIds = tabBrowserIds(section.tabs);
       const open = !folder.collapsed || filtering;
       const dropActive = dropFolderId === folder.id;
-      const body = (
-        <>
-          {open && memberIds.length > 0 && canReorder ? (
-            <Reorder.Group
-              as="div"
-              axis="y"
-              values={memberIds}
-              onReorder={(ids: number[]) =>
-                onFoldersChange?.(setFolderMembers(folders, folder.id, ids))
-              }
-              className="flex min-h-[calc(var(--zen-row-height)*1.5)] flex-col gap-[var(--zen-todo-gap)]"
-              data-testid={`zen-todo-folder-items-${folder.id}`}
-            >
-              {section.tabs.map((tab) => renderRow(tab, true))}
-            </Reorder.Group>
-          ) : (
-            open && (
-              <div class="flex min-h-[calc(var(--zen-row-height)*1.5)] flex-col gap-[var(--zen-todo-gap)]">
-                {section.tabs.map((tab) => renderRow(tab, false))}
-                {section.tabs.length === 0 && (
-                  <p class="text-zen-muted m-0 flex min-h-[calc(var(--zen-row-height)*2)] items-center justify-center py-[var(--zen-space-4)] text-center text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
-                    Drop todos here
-                  </p>
-                )}
-              </div>
-            )
-          )}
-          {!open && dragging && (
-            <p class="text-zen-muted m-0 flex min-h-[calc(var(--zen-row-height)*1.5)] items-center justify-center text-center text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
-              Drop to add
-            </p>
-          )}
-        </>
-      );
-      const header = (
-        <TodoFolderHeader
-          name={folder.name}
-          open={open}
-          count={section.tabs.length}
-          dropActive={dropActive}
-          onToggle={() => onFoldersChange?.(toggleTodoFolder(folders, folder.id))}
-          onRename={(name) => onFoldersChange?.(renameTodoFolder(folders, folder.id, name))}
-          onDelete={() => onFoldersChange?.(removeTodoFolder(folders, folder.id))}
-        />
-      );
+      const members =
+        open && memberIds.length > 0 && canReorder ? (
+          <Reorder.Group
+            as="div"
+            axis="y"
+            values={memberIds}
+            onReorder={(ids: number[]) =>
+              onFoldersChange?.(setFolderMembers(folders, folder.id, ids))
+            }
+            className="flex flex-col gap-[var(--zen-todo-gap)]"
+            data-testid={`zen-todo-folder-items-${folder.id}`}
+          >
+            {section.tabs.map((tab) => renderRow(tab, true))}
+          </Reorder.Group>
+        ) : (
+          open &&
+          section.tabs.length > 0 && (
+            <div class="flex flex-col gap-[var(--zen-todo-gap)]">
+              {section.tabs.map((tab) => renderRow(tab, false))}
+            </div>
+          )
+        );
       return (
         <div
           key={folder.id}
-          class={cn(
-            "border-zen-line-medium flex flex-col gap-[var(--zen-todo-gap)] rounded-[var(--zen-radius-lg)] border p-[var(--zen-space-3)]",
-            dragging && "min-h-[calc(var(--zen-row-height)*2.5)] p-[var(--zen-space-4)]",
-            dropActive && "border-zen-accent bg-zen-surface",
-          )}
+          class="flex flex-col gap-[var(--zen-todo-gap)]"
           data-todo-drop-folder={folder.id}
           data-todo-folder-well={folder.id}
+          data-todo-drop-active={dropActive ? "true" : undefined}
         >
-          {header}
-          {body}
+          <TodoFolderHeader
+            name={folder.name}
+            open={open}
+            count={section.tabs.length}
+            onToggle={() => onFoldersChange?.(toggleTodoFolder(folders, folder.id))}
+            onRename={(name) => onFoldersChange?.(renameTodoFolder(folders, folder.id, name))}
+            onDelete={() => onFoldersChange?.(removeTodoFolder(folders, folder.id))}
+          />
+          {dragging && (
+            <div class="zs-todo-drop-well" data-testid="zen-todo-drop-well">
+              <div class="zs-todo-drop-well-pad">
+                <div class="zs-todo-drop-well-body">Drop here</div>
+              </div>
+            </div>
+          )}
+          {members}
         </div>
       );
     });

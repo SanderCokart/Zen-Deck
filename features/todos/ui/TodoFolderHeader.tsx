@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "preact/hooks";
-import { cn } from "@/shared/ui/cn";
 import { useSound } from "@/shared/ui/sound/SoundContext";
 
 const chevronClass = "zen-icon h-[calc(var(--zen-icon-sm)*0.85)] w-[calc(var(--zen-icon-sm)*0.85)]";
@@ -12,7 +11,6 @@ export function TodoFolderHeader({
   name,
   open,
   count,
-  dropActive,
   onToggle,
   onRename,
   onDelete,
@@ -20,7 +18,6 @@ export function TodoFolderHeader({
   name: string;
   open: boolean;
   count: number;
-  dropActive?: boolean;
   onToggle: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -44,15 +41,7 @@ export function TodoFolderHeader({
   };
 
   return (
-    <div
-      class={cn(
-        "zs-section-label zs-folder-header",
-        dropActive && "text-zen-text outline-zen-accent outline outline-[length:var(--zen-line)]",
-      )}
-      data-sub
-      data-testid="zen-todo-folder"
-      data-todo-folder-drop={dropActive ? "true" : undefined}
-    >
+    <div class="zs-section-label zs-folder-header" data-sub data-testid="zen-todo-folder">
       <button
         type="button"
         class="zs-tree-toggle zs-folder-toggle shrink-0 cursor-pointer border-0 bg-transparent p-0 text-inherit"

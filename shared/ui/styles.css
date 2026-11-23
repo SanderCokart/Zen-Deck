@@ -674,6 +674,64 @@
     border-radius: var(--zen-radius);
   }
 
+  /*
+   * Todo-column drop well: collapsed to nothing until a drag hovers the
+   * folder, then a striped accent frame with a transparent fill.
+   */
+  .zs-todo-drop-well {
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      grid-template-rows 160ms ease,
+      opacity 160ms ease;
+  }
+
+  .zs-todo-drop-well-pad {
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .zs-todo-drop-well-body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: calc(var(--zen-row-height) * 2);
+    margin-top: var(--zen-todo-gap);
+    padding: var(--zen-space-3);
+    border: var(--zen-space-1) solid transparent;
+    border-radius: var(--zen-radius-lg);
+    color: var(--zs-red-ink);
+    font-family: var(--font-mono);
+    font-size: var(--zen-text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    background:
+      color-mix(in srgb, var(--zs-red) 12%, transparent) padding-box,
+      repeating-linear-gradient(
+          -45deg,
+          color-mix(in srgb, var(--zs-red) 80%, transparent) 0 var(--zen-space-1),
+          transparent var(--zen-space-1) calc(var(--zen-space-1) * 2)
+        )
+        border-box;
+    background-clip: padding-box, border-box;
+    background-origin: padding-box, border-box;
+  }
+
+  [data-dragging] [data-todo-folder-well]:hover .zs-todo-drop-well,
+  [data-todo-folder-well][data-todo-drop-active] .zs-todo-drop-well {
+    grid-template-rows: 1fr;
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .zs-todo-drop-well {
+      transition: none;
+    }
+  }
+
   /* A sub-folder heading: the same, without a number. */
   .zs-section-label[data-sub] {
     height: calc(var(--zen-row-height) * 0.9);
