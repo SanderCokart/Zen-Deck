@@ -10,6 +10,7 @@ import { TRAFFIC_LIGHT_OPTIONS } from "@/features/status/model/status";
 import {
   pointerMovedPastDragThreshold,
   todoDropTargetAt,
+  todoFolderWells,
 } from "@/features/todos/model/todo-pointer";
 import { todoTabIdsToClear, type TodoClearFilter } from "@/features/todos/model/todo";
 import {
@@ -196,15 +197,25 @@ function ReorderTodoRow({
   const skipClick = useRef(false);
   const origin = useRef<{ x: number; y: number } | null>(null);
   const dragControls = useDragControls();
+  const [grabbing, setGrabbing] = useState(false);
   const tabId = tabBrowserId(tab);
   const light = tabId === undefined ? undefined : statuses.get(tabId);
+  const markDragging = (next: boolean) => {
+    setGrabbing(next);
+    onDraggingChange(next);
+  };
   return (
     <Reorder.Item
       as="div"
       value={tabId}
       dragListener={false}
       dragControls={dragControls}
-      whileDrag={{ opacity: 0.7, userSelect: "none", cursor: "grabbing" }}
+      whileDrag={{
+        opacity: 0.7,
+        userSelect: "none",
+        cursor: "grabbing",
+        pointerEvents: "none",
+      }}
       onPointerDown={(event: PointerEvent) => {
         if (event.button !== 0 || isTodoRowAction(event.target)) return;
         origin.current = { x: event.clientX, y: event.clientY };
@@ -228,7 +239,7 @@ function ReorderTodoRow({
         skipClick.current = true;
         origin.current = null;
         window.getSelection()?.removeAllRanges();
-        onDraggingChange(true);
+        markDragging(true);
         dragControls.start(event);
       }}
       onPointerUp={(event: PointerEvent) => {
@@ -236,18 +247,18 @@ function ReorderTodoRow({
         if (skipClick.current && tabId !== undefined) {
           onDrop?.(tabId, { x: event.clientX, y: event.clientY });
         }
-        onDraggingChange(false);
+        markDragging(false);
       }}
       onPointerCancel={() => {
         origin.current = null;
-        onDraggingChange(false);
+        markDragging(false);
       }}
       onDragStart={() => {
         skipClick.current = true;
         window.getSelection()?.removeAllRanges();
-        onDraggingChange(true);
+        markDragging(true);
       }}
-      onDragEnd={() => onDraggingChange(false)}
+      onDragEnd={() => markDragging(false)}
       onClick={(event: MouseEvent) => {
         if (isTodoRowAction(event.target)) return;
         if (skipClick.current) {
@@ -258,6 +269,7 @@ function ReorderTodoRow({
       }}
       className={todoRowClass(light, selected, true)}
       data-testid="zen-todo-row"
+      data-todo-dragging={grabbing ? "true" : undefined}
       data-status-light={light}
       data-todo-selected={selected ? "true" : undefined}
       data-current={tab.active === true ? "true" : undefined}
@@ -370,14 +382,14 @@ export function TodoNavigator({
   };
 
   const hoverDrop = (point: { x: number; y: number }) => {
-    const target = todoDropTargetAt(point.x, point.y);
+    const target = todoDropTargetAt(point.x, point.y, undefined, todoFolderWells());
     setDropFolderId(target && "folderId" in target ? target.folderId : null);
   };
 
   const dropTodo = (tabId: number, point: { x: number; y: number }) => {
     if (onFoldersChange === undefined) return;
     const currentFolders = foldersRef.current;
-    const target = todoDropTargetAt(point.x, point.y);
+    const target = todoDropTargetAt(point.x, point.y, undefined, todoFolderWells());
     if (target === undefined) return;
     const current = folderIdForTab(currentFolders, tabId) ?? null;
     const nextId = "ungrouped" in target ? null : target.folderId;
@@ -449,6 +461,7 @@ export function TodoNavigator({
       const { folder } = section;
       const memberIds = tabBrowserIds(section.tabs);
       const open = !folder.collapsed || filtering;
+      const dropActive = dropFolderId === folder.id;
       const body = (
         <>
           {open && memberIds.length > 0 && canReorder ? (
@@ -459,26 +472,27 @@ export function TodoNavigator({
               onReorder={(ids: number[]) =>
                 onFoldersChange?.(setFolderMembers(folders, folder.id, ids))
               }
-              className="flex flex-col gap-[var(--zen-todo-gap)]"
+              className="flex min-h-[calc(var(--zen-row-height)*1.5)] flex-col gap-[var(--zen-todo-gap)]"
               data-testid={`zen-todo-folder-items-${folder.id}`}
-              data-todo-drop-folder={folder.id}
             >
               {section.tabs.map((tab) => renderRow(tab, true))}
             </Reorder.Group>
           ) : (
             open && (
-              <div
-                class="flex flex-col gap-[var(--zen-todo-gap)]"
-                data-todo-drop-folder={folder.id}
-              >
+              <div class="flex min-h-[calc(var(--zen-row-height)*1.5)] flex-col gap-[var(--zen-todo-gap)]">
                 {section.tabs.map((tab) => renderRow(tab, false))}
                 {section.tabs.length === 0 && (
-                  <p class="text-zen-muted m-0 py-[var(--zen-space-2)] text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
+                  <p class="text-zen-muted m-0 flex min-h-[calc(var(--zen-row-height)*2)] items-center justify-center py-[var(--zen-space-4)] text-center text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
                     Drop todos here
                   </p>
                 )}
               </div>
             )
+          )}
+          {!open && dragging && (
+            <p class="text-zen-muted m-0 flex min-h-[calc(var(--zen-row-height)*1.5)] items-center justify-center text-center text-[length:var(--zen-text-xs)] tracking-[0.08em] uppercase">
+              Drop to add
+            </p>
           )}
         </>
       );
@@ -487,7 +501,7 @@ export function TodoNavigator({
           name={folder.name}
           open={open}
           count={section.tabs.length}
-          dropActive={dropFolderId === folder.id}
+          dropActive={dropActive}
           onToggle={() => onFoldersChange?.(toggleTodoFolder(folders, folder.id))}
           onRename={(name) => onFoldersChange?.(renameTodoFolder(folders, folder.id, name))}
           onDelete={() => onFoldersChange?.(removeTodoFolder(folders, folder.id))}
@@ -496,8 +510,13 @@ export function TodoNavigator({
       return (
         <div
           key={folder.id}
-          class="flex flex-col gap-[var(--zen-todo-gap)]"
+          class={cn(
+            "border-zen-line-medium flex flex-col gap-[var(--zen-todo-gap)] rounded-[var(--zen-radius-lg)] border p-[var(--zen-space-3)]",
+            dragging && "min-h-[calc(var(--zen-row-height)*2.5)] p-[var(--zen-space-4)]",
+            dropActive && "border-zen-accent bg-zen-surface",
+          )}
           data-todo-drop-folder={folder.id}
+          data-todo-folder-well={folder.id}
         >
           {header}
           {body}
