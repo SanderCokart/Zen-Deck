@@ -99,11 +99,16 @@ export function createTabSessionValues<T>(key: string, schema: v.GenericSchema<u
     });
   }
 
+  /** Every value read or set so far. Tabs not hydrated yet are missing. */
+  function entries(): { tabId: number; value: T }[] {
+    return [...memory].map(([tabId, value]) => ({ tabId, value }));
+  }
+
   /** Drops the in-memory copy when a tab closes. Session data goes with the tab. */
   function forget(tabId: number): void {
     memory.delete(tabId);
     hydrated.delete(tabId);
   }
 
-  return { hydrate, set, get, forget };
+  return { hydrate, set, get, entries, forget };
 }

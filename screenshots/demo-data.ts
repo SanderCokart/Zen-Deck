@@ -1,3 +1,4 @@
+import { TAG_DEFINITIONS_STORAGE_KEY } from "@/features/tags/model/tags";
 import { DEFAULT_DISPLAY_SETTINGS } from "@/features/settings/model/display-settings";
 import type { DisplaySettings } from "@/features/settings/model/display-settings";
 import { ESSENTIAL_TAB_NAMES_KEY } from "@/features/search/ui/hooks/useEssentialTabNames";
@@ -273,8 +274,19 @@ export function demoSnapshot(now = Date.now(), { busy = false } = {}): SearchSna
       { tabId: 2, light: "orange" },
       { tabId: 10, light: "red" },
     ],
+    tags: [
+      { tabId: 1, tagIds: ["demo-review"] },
+      { tabId: 2, tagIds: ["demo-review", "demo-bug"] },
+    ],
   };
 }
+
+/** The demo tag list, stored under `tagDefinitions`. */
+export const DEMO_TAGS = [
+  { id: "demo-review", name: "Review", color: "blue" },
+  { id: "demo-bug", name: "Bug", color: "red" },
+  { id: "demo-later", name: "Later", color: "gray" },
+] as const;
 
 /** The demo todo marks; `busy` adds two more so the todo column fills. */
 export function demoTodos({ busy = false } = {}): TabTodo[] {
@@ -334,5 +346,6 @@ export function demoStorage(displaySettings: DisplaySettings = DEFAULT_DISPLAY_S
     [DISPLAY_SETTINGS_STORAGE_KEY]: displaySettings,
     [ESSENTIAL_TAB_NAMES_KEY]: DEMO_ESSENTIAL_NAMES,
     [COMPLEXITY_SETUP_DONE_KEY]: true,
+    [TAG_DEFINITIONS_STORAGE_KEY]: DEMO_TAGS,
   };
 }

@@ -16,6 +16,7 @@ export type {
   TabInfo,
   TabTimer,
   TabStatus,
+  TabTags,
   TabTodo,
   TodoStatus,
   TrafficLight,

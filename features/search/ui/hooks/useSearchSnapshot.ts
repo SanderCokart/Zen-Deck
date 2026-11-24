@@ -19,6 +19,8 @@ export interface SearchSnapshotData {
   timers: Map<number, TabTimer>;
   todos: Map<number, TabTodo>;
   statuses: Map<number, TrafficLight>;
+  /** Tag IDs per tab. */
+  tabTags: Map<number, string[]>;
 }
 
 /**
@@ -35,6 +37,8 @@ export interface SearchSnapshotState {
   timers: Map<number, TabTimer>;
   todos: Map<number, TabTodo>;
   statuses: Map<number, TrafficLight>;
+  /** Tag IDs per tab. */
+  tabTags: Map<number, string[]>;
   loadError: string | null;
   /** True after the first snapshot request finishes, success or failure. */
   loaded: boolean;
@@ -42,6 +46,9 @@ export interface SearchSnapshotState {
     update:
       | Map<number, TrafficLight>
       | ((current: Map<number, TrafficLight>) => Map<number, TrafficLight>),
+  ) => void;
+  setTabTags: (
+    update: Map<number, string[]> | ((current: Map<number, string[]>) => Map<number, string[]>),
   ) => void;
   setTabs: (update: (current: TabInfo[]) => TabInfo[]) => void;
   setTimers: (
@@ -122,15 +129,16 @@ export function useSearchSnapshot(cache?: SearchSnapshotCache): SearchSnapshotSt
   const [statuses, setStatuses] = useState<Map<number, TrafficLight>>(
     () => cached?.statuses ?? new Map(),
   );
+  const [tabTags, setTabTags] = useState<Map<number, string[]>>(() => cached?.tabTags ?? new Map());
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(cached !== undefined);
 
   // Local edits (a timer set, a todo marked) count too, so the next open shows them.
   useEffect(() => {
     if (cache && loaded && loadError === null) {
-      cache.snapshot = { tabs, spaces, timers, todos, statuses };
+      cache.snapshot = { tabs, spaces, timers, todos, statuses, tabTags };
     }
-  }, [cache, loaded, loadError, tabs, spaces, timers, todos, statuses]);
+  }, [cache, loaded, loadError, tabs, spaces, timers, todos, statuses, tabTags]);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +180,8 @@ export function useSearchSnapshot(cache?: SearchSnapshotCache): SearchSnapshotSt
           );
           setTimers(new Map(snapshot.timers.map((item) => [item.tabId, item])));
           setStatuses(statusesByTabId(snapshot.statuses));
+          // An older background (mid-update) sends no tag list.
+          setTabTags(new Map((snapshot.tags ?? []).map((item) => [item.tabId, item.tagIds])));
           setLoadError(null);
           loadTodos(tabBrowserIds(nextTabs));
         })
@@ -208,11 +218,13 @@ export function useSearchSnapshot(cache?: SearchSnapshotCache): SearchSnapshotSt
     timers,
     todos,
     statuses,
+    tabTags,
     loadError,
     loaded,
     setTabs,
     setTimers,
     setTodos,
     setStatuses,
+    setTabTags,
   };
 }

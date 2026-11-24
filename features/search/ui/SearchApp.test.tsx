@@ -43,19 +43,11 @@ vi.mock("motion/react", async () => {
         onReorder?: (ids: number[]) => void;
         className?: string;
         class?: string;
-        "data-testid"?: string;
-        "data-todo-ungrouped"?: string;
-        "data-todo-drop-folder"?: string;
       }) => {
         motionReorder.onReorder = props.onReorder;
         return h(
           props.as ?? "div",
-          {
-            class: props.class ?? props.className,
-            "data-testid": props["data-testid"] ?? "zen-todo-list",
-            "data-todo-ungrouped": props["data-todo-ungrouped"],
-            "data-todo-drop-folder": props["data-todo-drop-folder"],
-          },
+          { class: props.class ?? props.className, "data-testid": "zen-todo-list" },
           props.children as never,
         );
       },
@@ -1391,81 +1383,6 @@ describe("SearchApp", () => {
     root.remove();
   });
 
-  it("creates a persistent todo folder and drops a todo into it", async () => {
-    const { root } = mountSearchApp(
-      vi.fn(),
-      tabs.map((tab) => ({ ...tab, active: false })),
-      "overlay",
-      undefined,
-      [],
-      [
-        { tabId: 1, status: "todo" },
-        { tabId: 2, status: "todo" },
-      ],
-    );
-
-    await vi.waitFor(() =>
-      expect(root.querySelector("[data-testid='zen-todo-folder-add']")).not.toBeNull(),
-    );
-    root.querySelector<HTMLButtonElement>("[data-testid='zen-todo-folder-add']")!.click();
-    await vi.waitFor(() =>
-      expect(root.querySelector("[data-testid='zen-todo-folder']")?.textContent).toContain(
-        "Folder",
-      ),
-    );
-    expect(browser.storage.local.set).toHaveBeenCalledWith(
-      expect.objectContaining({
-        todoFolders: expect.objectContaining({
-          folders: [expect.objectContaining({ name: "Folder", collapsed: false })],
-        }),
-      }),
-    );
-
-    const drop = root.querySelector<HTMLElement>("[data-todo-drop-folder]")!;
-    const hit = vi.spyOn(document, "elementFromPoint").mockReturnValue(drop);
-    const row = root.querySelector<HTMLElement>("[data-testid='zen-todo-row']")!;
-    motionReorder.dragStart = vi.fn();
-    row.dispatchEvent(
-      new PointerEvent("pointerdown", {
-        button: 0,
-        pointerId: 1,
-        bubbles: true,
-        clientX: 10,
-        clientY: 10,
-      }),
-    );
-    row.dispatchEvent(
-      new PointerEvent("pointermove", {
-        button: 0,
-        pointerId: 1,
-        bubbles: true,
-        clientX: 10,
-        clientY: 24,
-      }),
-    );
-    row.dispatchEvent(
-      new PointerEvent("pointerup", {
-        button: 0,
-        pointerId: 1,
-        bubbles: true,
-        clientX: 10,
-        clientY: 24,
-      }),
-    );
-    await vi.waitFor(() => {
-      const memberIds = vi.mocked(browser.storage.local.set).mock.calls.flatMap(([value]) => {
-        const members = (value as { todoFolders?: { members?: Record<string, number[]> } })
-          .todoFolders?.members;
-        return members === undefined ? [] : Object.values(members).flat();
-      });
-      expect(memberIds).toContain(1);
-    });
-    hit.mockRestore();
-
-    render(null, root);
-    root.remove();
-  });
-
   it("keeps the tab list highlighted when the current tab is not a todo", async () => {
     const { root } = mountSearchApp(
       vi.fn(),
@@ -1677,6 +1594,149 @@ describe("SearchApp", () => {
 
     render(null, root);
     root.remove();
+  });
+
+  it("creates, recolours and deletes a tag from a todo's tag key", async () => {
+    const { root, sendMessage } = mountSearchApp(
+      vi.fn(),
+      tabs,
+      "overlay",
+      undefined,
+      [],
+      [{ tabId: 1, status: "todo" }],
+    );
+    const row = () => root.querySelector("[data-testid='zen-todo-row']")!;
+    const tagButton = () =>
+      row().querySelector<HTMLButtonElement>("[data-testid='zen-tag-button']");
+    const menu = () => root.querySelector("[data-testid='zen-tag-menu']");
+    const input = () => menu()!.querySelector<HTMLInputElement>("[data-testid='zen-tag-input']")!;
+    const storedTags = () =>
+      vi
+        .mocked(browser.storage.local.set)
+        .mock.calls.map(([value]) => (value as { tagDefinitions?: unknown }).tagDefinitions)
+        .filter((value) => value !== undefined)
+        .at(-1) as { id: string; name: string; color: string }[] | undefined;
+    const press = (key: string) =>
+      input().dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true }));
+
+    await vi.waitFor(() => expect(tagButton()).toBeTruthy());
+    expect(tagButton()!.getAttribute("data-tag-count")).toBe("0");
+
+    tagButton()!.click();
+    await vi.waitFor(() => expect(menu()).not.toBeNull());
+    expect(tagButton()!.getAttribute("aria-expanded")).toBe("true");
+
+    // Typing a new name offers to create it; Enter creates it and tags the tab.
+    input().value = "Review";
+    input().dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(menu()!.querySelector("[data-testid='zen-tag-create']")?.textContent).toContain(
+        "Review",
+      ),
+    );
+    press("Enter");
+    await vi.waitFor(() =>
+      expect(storedTags()).toEqual([expect.objectContaining({ name: "Review" })]),
+    );
+    const tagId = storedTags()![0]!.id;
+    expect(sendMessage).toHaveBeenCalledWith({ type: "setTabTags", tabId: 1, tagIds: [tagId] });
+    await vi.waitFor(() => expect(tagButton()!.getAttribute("data-tag-count")).toBe("1"));
+    expect(
+      menu()!.querySelector("[data-testid='zen-tag-option']")?.getAttribute("aria-selected"),
+    ).toBe("true");
+
+    // The swatch opens a colour row.
+    menu()!.querySelector<HTMLButtonElement>("[data-testid='zen-tag-color-button']")!.click();
+    await vi.waitFor(() =>
+      expect(menu()!.querySelector("[data-testid='zen-tag-palette']")).not.toBeNull(),
+    );
+    menu()!.querySelector<HTMLButtonElement>("[data-tag-color='green']")!.click();
+    await vi.waitFor(() => expect(storedTags()?.[0]?.color).toBe("green"));
+
+    // Delete asks once more, then takes the tag off every tab.
+    const remove = () =>
+      menu()!.querySelector<HTMLButtonElement>("[data-testid='zen-tag-delete']")!;
+    remove().click();
+    await vi.waitFor(() => expect(remove().textContent).toBe("Delete?"));
+    remove().click();
+    await vi.waitFor(() => expect(storedTags()).toEqual([]));
+    expect(sendMessage).toHaveBeenCalledWith({ type: "removeTagFromTabs", tagId });
+    await vi.waitFor(() => expect(tagButton()!.getAttribute("data-tag-count")).toBe("0"));
+
+    // Escape closes just the tag menu.
+    press("Escape");
+    await vi.waitFor(() => expect(menu()).toBeNull());
+    expect(row()).toBeTruthy();
+
+    render(null, root);
+    root.remove();
+  });
+
+  it("shows a todo's tags beside its workspace and removes one from its close key", async () => {
+    const { root, sendMessage } = mountSearchApp(
+      vi.fn(),
+      tabs.map((tab) => ({ ...tab, workspaceName: "Work" })),
+      "overlay",
+      undefined,
+      [],
+      [{ tabId: 2, status: "todo" }],
+    );
+    const todoRow = () => root.querySelector<HTMLElement>("[data-testid='zen-todo-row']");
+    await vi.waitFor(() => expect(todoRow()).not.toBeNull());
+
+    todoRow()!.querySelector<HTMLButtonElement>("[data-testid='zen-tag-button']")!.click();
+    const input = await vi.waitFor(() => {
+      const found = root.querySelector<HTMLInputElement>("[data-testid='zen-tag-input']");
+      expect(found).not.toBeNull();
+      return found!;
+    });
+    input.value = "Later";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    await vi.waitFor(() =>
+      expect(root.querySelector("[data-testid='zen-tag-create']")).not.toBeNull(),
+    );
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+
+    const chip = () => todoRow()!.querySelector<HTMLElement>("[data-testid='zen-tag-chip']");
+    await vi.waitFor(() => expect(chip()?.textContent).toContain("Later"));
+    // Same line as Mark as done, right after the workspace name.
+    const line = chip()!.closest("[data-testid='zen-tag-chips']")!.parentElement!.parentElement!;
+    expect(line.querySelector("[data-testid='zen-todo-done-button']")).not.toBeNull();
+    expect(
+      chip()!.closest("[data-testid='zen-tag-chips']")!.previousElementSibling?.textContent,
+    ).toBe("Work");
+
+    const sent = vi.mocked(sendMessage).mock.calls.length;
+    chip()!.querySelector<HTMLButtonElement>("[data-testid='zen-tag-chip-remove']")!.click();
+    await vi.waitFor(() => expect(chip()).toBeNull());
+    expect(sendMessage.mock.calls.slice(sent)).toContainEqual([
+      { type: "setTabTags", tabId: 2, tagIds: [] },
+    ]);
+
+    render(null, root);
+    root.remove();
+  });
+
+  it("puts the tag key on todo rows only, and hides it while Tags is off", async () => {
+    const todos = [{ tabId: 2, status: "todo" as const }];
+    const on = mountSearchApp(vi.fn(), tabs, "overlay", undefined, [], todos);
+    await vi.waitFor(() =>
+      expect(
+        on.root.querySelector("[data-testid='zen-todo-row'] [data-testid='zen-tag-button']"),
+      ).not.toBeNull(),
+    );
+    // Tab rows, issue entries and the current-tab strip have no tag key.
+    expect(on.root.querySelectorAll("[data-testid='zen-tag-button']")).toHaveLength(1);
+    render(null, on.root);
+    on.root.remove();
+
+    const off = mountSearchApp(vi.fn(), tabs, "overlay", { tags: false }, [], todos);
+    await vi.waitFor(() =>
+      expect(off.root.querySelector("[data-testid='zen-todo-row']")).not.toBeNull(),
+    );
+    expect(off.root.querySelector("[data-testid='zen-tag-button']")).toBeNull();
+    render(null, off.root);
+    off.root.remove();
   });
 
   it("tints tab rows, issue entries and todo rows by their tab's status color", async () => {

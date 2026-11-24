@@ -35,6 +35,8 @@ export interface MessageRouterHandlers {
   setTabLabel(tabId: number, label: string): Promise<void>;
   setTodo(tabId: number, status: TodoStatus | "none"): Promise<void>;
   setTabStatus(tabId: number, light: TrafficLight | "none"): Promise<void>;
+  setTabTags(tabId: number, tagIds: string[]): Promise<void>;
+  removeTagFromTabs(tagId: string): Promise<void>;
   clearTodos(tabIds: number[], close: boolean): Promise<void>;
   getHostOverrides(tabId: number): Promise<HostOverrideGroup[]>;
   setHostOverrides(tabId: number, groups: HostOverrideGroup[]): Promise<HostOverrideGroup[]>;
@@ -169,6 +171,10 @@ function handleParsedRequest(
       return handlers.setTodo(message.tabId, message.status);
     case "setTabStatus":
       return handlers.setTabStatus(message.tabId, message.light);
+    case "setTabTags":
+      return handlers.setTabTags(message.tabId, message.tagIds);
+    case "removeTagFromTabs":
+      return handlers.removeTagFromTabs(message.tagId);
     case "clearTodos":
       return handlers.clearTodos(message.tabIds, message.close === true);
     case "getHostOverrides":

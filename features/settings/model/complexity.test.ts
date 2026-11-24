@@ -27,6 +27,7 @@ describe("complexity presets", () => {
       contextMenu: false,
       todos: false,
       statusColors: false,
+      tags: false,
       mcp: false,
       forgeTree: false,
       hosts: false,
@@ -47,6 +48,7 @@ describe("complexity presets", () => {
       hideEssentialsInOverlay: false,
       todos: true,
       statusColors: true,
+      tags: true,
     };
     expect(PRESETS.simple).toEqual(simple);
     expect(PRESETS.enhanced).toEqual(enhanced);

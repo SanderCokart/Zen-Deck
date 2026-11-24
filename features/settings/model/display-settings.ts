@@ -90,6 +90,8 @@ const DEFAULTS = {
   todos: false,
   /** Traffic-light status colours on rows. */
   statusColors: false,
+  /** Coloured tags on todos, set from the tag key beside a todo's status light. */
+  tags: false,
   /** MCP / Bridge module on the settings page. */
   mcp: false,
   /** Dedicated GitHub/GitLab tree column. Requires fullscreen. */
@@ -278,6 +280,7 @@ const displaySettingsSchema = v.pipe(
       contextMenu: boolean(DEFAULTS.contextMenu),
       todos: boolean(DEFAULTS.todos),
       statusColors: boolean(DEFAULTS.statusColors),
+      tags: boolean(DEFAULTS.tags),
       mcp: boolean(DEFAULTS.mcp),
       forgeTree: boolean(DEFAULTS.forgeTree),
       confirmOrganizeForgeTabs: boolean(DEFAULTS.confirmOrganizeForgeTabs),

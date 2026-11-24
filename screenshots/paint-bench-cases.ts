@@ -60,6 +60,7 @@ const ISOLATED: readonly { key: ComplexityFlagKey; label: string; value: boolean
   { key: "contextMenu", label: "context menu", value: true },
   { key: "todos", label: "todos", value: true },
   { key: "statusColors", label: "status colors", value: true },
+  { key: "tags", label: "tags", value: true },
   { key: "mcp", label: "mcp", value: true },
   { key: "forgeTree", label: "issue column", value: true },
   { key: "hosts", label: "host overrides", value: true },

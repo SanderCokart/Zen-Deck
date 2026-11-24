@@ -36,6 +36,8 @@ function handlers(overrides: Partial<MessageRouterHandlers> = {}): MessageRouter
     setTabLabel: vi.fn(async () => undefined),
     setTodo: vi.fn(async () => undefined),
     setTabStatus: vi.fn(async () => undefined),
+    setTabTags: vi.fn(async () => undefined),
+    removeTagFromTabs: vi.fn(async () => undefined),
     clearTodos: vi.fn(async () => undefined),
     getHostOverrides: vi.fn(async () => []),
     setHostOverrides: vi.fn(async (_tabId, groups) => groups),
@@ -333,6 +335,14 @@ describe("dispatchExtensionMessage", () => {
     expect(api.moveTabToFolder).toHaveBeenCalledWith(4, "docs");
     expect(api.organizeForgeIssueTabs).toHaveBeenCalledWith("tree", undefined, undefined);
     expect(api.replacePinnedUrlWithCurrent).toHaveBeenCalledWith(4);
+  });
+
+  it("dispatches tag changes", async () => {
+    const api = handlers();
+    await dispatchExtensionMessage(api, { type: "setTabTags", tabId: 4, tagIds: ["a", "b"] });
+    await dispatchExtensionMessage(api, { type: "removeTagFromTabs", tagId: "a" });
+    expect(api.setTabTags).toHaveBeenCalledWith(4, ["a", "b"]);
+    expect(api.removeTagFromTabs).toHaveBeenCalledWith("a");
   });
 
   it("dispatches setTabStatus, including clearing it with none", async () => {
