@@ -45,6 +45,22 @@ export async function reuseOpenedExternalTab(
     return;
   }
 
+  await reuseTabForUrl(openedTabId, url, deps);
+}
+
+/** The part of the reuse dependencies that focuses a match and closes the new tab. */
+export type TabReuseDeps = Omit<ExternalTabReuseDeps, "consumeExternalTab">;
+
+/**
+ * Focuses the open tab that already has `url` and closes `openedTabId`, the new
+ * tab that was opened for it. Leaves the new tab when there is no match or the
+ * setting is off.
+ */
+export async function reuseTabForUrl(
+  openedTabId: number,
+  url: string,
+  deps: TabReuseDeps,
+): Promise<void> {
   let enabled = false;
   try {
     enabled = await deps.isEnabled();
@@ -68,7 +84,7 @@ export async function reuseOpenedExternalTab(
     if (tabId !== undefined) {
       await deps.recordOpened?.(tabId);
     }
-    debugLog(`${LOG_PREFIX} Focused an existing tab for an external URL`, {
+    debugLog(`${LOG_PREFIX} Focused an existing tab instead of a new one`, {
       openedTabId,
       tabId: match.id,
       url,

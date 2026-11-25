@@ -585,7 +585,7 @@ function SettingsPage({ initial }: { initial: DisplaySettings }) {
                   checked={settings.reuseExternalTabs}
                   onChange={(reuseExternalTabs) => updateSettings({ reuseExternalTabs })}
                 >
-                  <TipHint text="When another app opens a link in Zen, such as a mail client, focus the tab that already has that address instead of opening a new one.">
+                  <TipHint text="When another app (such as a mail client) or a link on a page opens an address in a new tab, focus the tab that already has it instead. Middle- and Ctrl-clicks still open a second copy.">
                     <span class={monoLabelClass}>Reuse an open tab</span>
                   </TipHint>
                 </Switch>

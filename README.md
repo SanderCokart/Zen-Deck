@@ -313,9 +313,9 @@ The sounds come from the hardware kit in [SPEC-01](https://github.com/shuding/sp
   </picture>
 </p>
 
-### Reuse an open tab for external links
+### Reuse an open tab for links
 
-When another app opens a link in Zen (a mail client, Slack, a terminal), Zen normally opens a new tab every time. Turn on **Reuse an open tab** under **External links** in Display options, and Zen switches to a tab that already has that address instead, across spaces, so the same page does not pile up in duplicates.
+When another app opens a link in Zen (a mail client, Slack, a terminal), or you click a link on a page that opens in a new tab, Zen normally opens a new tab every time. Turn on **Reuse an open tab** under **External links** in Display options, and Zen switches to a tab that already has that address instead, across spaces, so the same page does not pile up in duplicates. Middle-clicks and Ctrl/Shift-clicks on page links still open a second copy, so you can still ask for one on purpose.
 
 **For example:**
 

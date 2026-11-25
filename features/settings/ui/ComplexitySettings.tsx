@@ -45,7 +45,7 @@ const SAFE_TOGGLES: readonly {
   {
     key: "reuseExternalTabs",
     label: "Reuse an open tab",
-    hint: "Focus an already-open tab when another app opens the same address.",
+    hint: "Focus an already-open tab when another app or a page link opens the same address.",
   },
   {
     key: "groupFolders",
