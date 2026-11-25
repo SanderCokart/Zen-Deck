@@ -291,3 +291,99 @@ describe("listSelectedTabs", () => {
     expect(queryTabs).not.toHaveBeenCalledWith({ highlighted: true });
   });
 });
+
+describe("current tab after a switch made in the browser", () => {
+  it("marks the anchor window's active tab, not the stale anchor", async () => {
+    const workspace = createZenWorkspaceAdapter({
+      // The window-hosted omnibar still anchors to the tab it was last shown over.
+      resolveAnchorTabId: async (preferred) => preferred ?? 1,
+      getZenTabsApi: () => ({
+        getAllTabs: async () => [
+          tab({ id: 1, title: "Old", active: false }),
+          tab({ id: 2, title: "New", active: true }),
+        ],
+      }),
+      browser: {
+        queryTabs: async () => [
+          { id: 1, windowId: 1, active: false },
+          { id: 2, windowId: 1, active: true },
+          { id: 3, windowId: 7, active: true },
+        ],
+        getTab: async (tabId) => ({ id: tabId, windowId: 1 }),
+        focusWindow: async () => undefined,
+        activateTab: async () => undefined,
+      },
+    });
+
+    await expect(workspace.listTabs(1)).resolves.toEqual([
+      expect.objectContaining({ id: 1, active: false }),
+      expect.objectContaining({ id: 2, active: true }),
+    ]);
+  });
+
+  it("does the same without the Zen experiment", async () => {
+    const workspace = createZenWorkspaceAdapter({
+      resolveAnchorTabId: async (preferred) => preferred ?? 1,
+      getZenTabsApi: () => undefined,
+      browser: {
+        queryTabs: async () => [
+          { id: 1, title: "Old", windowId: 1, active: false },
+          { id: 2, title: "New", windowId: 1, active: true },
+        ],
+        getTab: async (tabId) => ({ id: tabId, windowId: 1 }),
+        focusWindow: async () => undefined,
+        activateTab: async () => undefined,
+      },
+    });
+
+    await expect(workspace.listTabs(1)).resolves.toEqual([
+      expect.objectContaining({ id: 1, active: false }),
+      expect.objectContaining({ id: 2, active: true }),
+    ]);
+  });
+
+  it("shows no current tab when Zen has selected its hidden empty tab", async () => {
+    const workspace = createZenWorkspaceAdapter({
+      resolveAnchorTabId: async (preferred) => preferred ?? 1,
+      getZenTabsApi: () => ({
+        // getAllTabs leaves out the zen-empty-tab, so no listed tab is selected.
+        getAllTabs: async () => [
+          tab({ id: 1, title: "Unloaded", active: false }),
+          tab({ id: 2, title: "Also unloaded", active: false }),
+        ],
+      }),
+      browser: {
+        queryTabs: async () => [
+          { id: 1, windowId: 1, active: false },
+          { id: 2, windowId: 1, active: false },
+          { id: 9, url: "about:blank", windowId: 1, active: true },
+        ],
+        getTab: async (tabId) => ({ id: tabId, windowId: 1 }),
+        focusWindow: async () => undefined,
+        activateTab: async () => undefined,
+      },
+    });
+
+    const tabs = await workspace.listTabs(1);
+    expect(tabs.some((item) => item.active)).toBe(false);
+  });
+
+  it("shows no current tab when the window reports no active tab", async () => {
+    const workspace = createZenWorkspaceAdapter({
+      resolveAnchorTabId: async (preferred) => preferred ?? 1,
+      getZenTabsApi: () => ({
+        getAllTabs: async () => [tab({ id: 1, title: "Unloaded" })],
+      }),
+      browser: {
+        queryTabs: async () => [{ id: 1, windowId: 1, active: false }],
+        getTab: async (tabId) => ({ id: tabId, windowId: 1 }),
+        focusWindow: async () => undefined,
+        activateTab: async () => undefined,
+      },
+    });
+
+    await expect(workspace.listTabs(1)).resolves.toEqual([
+      expect.objectContaining({ id: 1, active: false }),
+    ]);
+  });
+});

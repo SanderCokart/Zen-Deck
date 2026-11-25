@@ -101,6 +101,23 @@ describe("createCachedSnapshotReader", () => {
     await cache.getSnapshot(1);
     expect(read).toHaveBeenCalledTimes(2);
   });
+
+  it("does not hand out a read that began before an invalidation", async () => {
+    const empty = { tabs: [], spaces: [], timers: [], statuses: [], tags: [] };
+    const resolvers: Array<(value: typeof empty) => void> = [];
+    const read = vi.fn(() => new Promise<typeof empty>((resolve) => resolvers.push(resolve)));
+    const cache = createCachedSnapshotReader(read);
+
+    const stale = cache.getSnapshot(1);
+    cache.invalidate();
+    const fresh = cache.getSnapshot(1);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(fresh).not.toBe(stale);
+
+    resolvers[0]?.(empty);
+    resolvers[1]?.(empty);
+    await Promise.all([stale, fresh]);
+  });
 });
 
 describe("registerSnapshotChangeNotifications", () => {
@@ -158,6 +175,21 @@ describe("registerSnapshotChangeNotifications", () => {
     listeners.onUpdated?.(1, { title: "New title" });
     vi.advanceTimersByTime(150);
     expect(sendMessage).toHaveBeenCalledTimes(2);
+
+    stop();
+  });
+
+  it("invalidates on each event, before the debounced broadcast", () => {
+    vi.useFakeTimers();
+    const { sendMessage, listeners } = installBrowser();
+    const invalidate = vi.fn();
+    const stop = registerSnapshotChangeNotifications(150, invalidate);
+
+    listeners.onUpdated?.(1, { url: "https://x.test/next" });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(150);
+    expect(sendMessage).toHaveBeenCalledTimes(1);
 
     stop();
   });

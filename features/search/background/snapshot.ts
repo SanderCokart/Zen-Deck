@@ -74,6 +74,7 @@ export function createCachedSnapshotReader(
   let payloadAnchor: number | undefined | typeof UNSET = UNSET;
   let inflight: Promise<SearchSnapshotPayload> | undefined;
   let inflightAnchor: number | undefined | typeof UNSET = UNSET;
+  let inflightEpoch = -1;
 
   return {
     invalidate() {
@@ -85,13 +86,13 @@ export function createCachedSnapshotReader(
       if (payload && payloadAnchor === anchorTabId) {
         return payload;
       }
-      if (inflight && inflightAnchor === anchorTabId) {
+      // A read begun before the last invalidation may hold the old active tab.
+      if (inflight && inflightAnchor === anchorTabId && inflightEpoch === epoch) {
         return inflight;
       }
 
       const started = epoch;
-      inflightAnchor = anchorTabId;
-      inflight = read(anchorTabId)
+      const request = read(anchorTabId)
         .then((next) => {
           if (started === epoch) {
             payload = next;
@@ -100,10 +101,16 @@ export function createCachedSnapshotReader(
           return next;
         })
         .finally(() => {
-          inflight = undefined;
-          inflightAnchor = UNSET;
+          if (inflight === request) {
+            inflight = undefined;
+            inflightAnchor = UNSET;
+            inflightEpoch = -1;
+          }
         });
-      return inflight;
+      inflight = request;
+      inflightAnchor = anchorTabId;
+      inflightEpoch = started;
+      return request;
     },
   };
 }
@@ -114,18 +121,23 @@ export function notifySnapshotChanged(): void {
   });
 }
 
+/**
+ * Broadcasts `snapshotChanged` once a burst of tab and storage events settles.
+ * `onInvalidate` runs on every event, not after the debounce, so a snapshot
+ * read in the meantime (Alt+F right after a tab switch) is not the cached one.
+ */
 export function registerSnapshotChangeNotifications(
   debounceMs = 150,
-  onNotify?: () => void,
+  onInvalidate?: () => void,
 ): () => void {
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const notify = () => {
+    onInvalidate?.();
     if (timeout !== undefined) {
       clearTimeout(timeout);
     }
     timeout = setTimeout(() => {
       timeout = undefined;
-      onNotify?.();
       notifySnapshotChanged();
     }, debounceMs);
   };

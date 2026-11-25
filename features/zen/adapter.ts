@@ -147,11 +147,44 @@ function resolveOriginalTabTitle(
   return displayed || fallback || custom || "Untitled";
 }
 
+/**
+ * The tab the user is on in the anchor tab's window. The anchor only names the
+ * window: the window-hosted omnibar keeps the tab it was last shown over, so a
+ * tab switched to in the browser since then is the current one, not the anchor.
+ *
+ * `null` means the window is known and none of its listed tabs is current. With
+ * every tab unloaded Zen selects its hidden empty tab, which is either absent
+ * here or not among the tabs we list, so no tab should show as current.
+ * `undefined` means there is no anchor, so callers fall back. When the window
+ * or its active flags are unknown it returns the anchor, as before.
+ */
+export function currentTabIdInAnchorWindow(
+  browserTabs: Iterable<BrowserTabSnapshot>,
+  anchorTabId?: number,
+): number | null | undefined {
+  if (!isUsableTabId(anchorTabId)) {
+    return undefined;
+  }
+  const tabs = [...browserTabs];
+  const windowId = tabs.find((tab) => tab.id === anchorTabId)?.windowId;
+  if (!isUsableWindowId(windowId)) {
+    return anchorTabId;
+  }
+  const inWindow = tabs.filter((tab) => tab.windowId === windowId);
+  // Without an `active` flag on any of them there is nothing to go on.
+  if (!inWindow.some((tab) => typeof tab.active === "boolean")) {
+    return anchorTabId;
+  }
+  const current = inWindow.find((tab) => tab.active === true && isUsableTabId(tab.id));
+  return current?.id ?? null;
+}
+
 function mapBrowserTabs(
   tabs: BrowserTabSnapshot[],
   labels: Record<number, string>,
-  focusedTabId?: number,
+  anchorTabId?: number,
 ): TabInfo[] {
+  const focusedTabId = currentTabIdInAnchorWindow(tabs, anchorTabId);
   return tabs.map((tab) => {
     const tabId =
       typeof tab.id === "number" && Number.isInteger(tab.id) && tab.id >= 0 ? tab.id : -1;
@@ -164,7 +197,7 @@ function mapBrowserTabs(
       favIconUrl: tab.favIconUrl || "",
       windowId: tab.windowId ?? -1,
       lastOpenedAt: tab.lastAccessed,
-      active: tabId === focusedTabId,
+      active: focusedTabId != null && tabId >= 0 && tabId === focusedTabId,
       pinned: tab.pinned === true,
     };
   });
@@ -193,7 +226,7 @@ export function createZenWorkspaceAdapter(
   }
 
   async function enrichZenTabs(tabs: TabInfo[], anchorTabId?: number): Promise<TabInfo[]> {
-    const focusedTabId = await resolveAnchor(anchorTabId);
+    const anchor = await resolveAnchor(anchorTabId);
     let browserTabsById = new Map<number, BrowserTabSnapshot>();
     try {
       browserTabsById = new Map(
@@ -207,6 +240,7 @@ export function createZenWorkspaceAdapter(
     } catch {
       // Browser tab metadata is optional when the fallback host is unavailable.
     }
+    const focusedTabId = currentTabIdInAnchorWindow(browserTabsById.values(), anchor);
     return tabs.map((tab) => {
       const candidateTabId = normalizeTabId(tab.id);
       const browserTab = browserTabsById.get(candidateTabId);
@@ -216,9 +250,11 @@ export function createZenWorkspaceAdapter(
         title: resolveOriginalTabTitle(tab.title, tab.customLabel, browserTab?.title),
         lastOpenedAt: browserTab?.lastAccessed ?? tab.lastOpenedAt,
         active:
-          focusedTabId !== undefined
-            ? candidateTabId >= 0 && candidateTabId === focusedTabId
-            : tab.active === true || browserTab?.active === true,
+          focusedTabId === null
+            ? false
+            : focusedTabId !== undefined
+              ? candidateTabId >= 0 && candidateTabId === focusedTabId
+              : tab.active === true || browserTab?.active === true,
       };
     });
   }
