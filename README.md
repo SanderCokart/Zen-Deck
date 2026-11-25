@@ -69,7 +69,7 @@ Change or assign shortcuts in `about:addons` → **Zen Deck** → **Manage Exten
 
 ### Settings
 
-Every option in this guide lives in **Display options**. Open it from the ⚙ gear at the right of the search field on the omnibar. It also sits in `about:addons` → **Zen Deck** → **Preferences**. Changes apply as you make them, with no save button.
+Every option in this guide lives in **Display options**. Open it by clicking Zen Deck's toolbar button, or from the ⚙ gear at the right of the search field on the omnibar. It also sits in `about:addons` → **Zen Deck** → **Preferences**. Changes apply as you make them, with no save button.
 
 ![The gear beside the search field opens Display options](docs/screenshots/settings-gear.png)
 
@@ -160,7 +160,7 @@ The engine sits at the left end of the search field. Click it to pick Google, Du
 
 ### Toolbar button
 
-Clicking Zen Deck's toolbar button opens the omnibar, the same as `Alt+F`. The old toolbar popup, and the settings that only applied to it, are gone.
+Clicking Zen Deck's toolbar button opens **Display options** in its own window. Use `Alt+F` to open the omnibar.
 
 ### Status, rename, and the tab menu
 

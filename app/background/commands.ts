@@ -1,6 +1,7 @@
 import { debugLog } from "@/shared/debug";
 import { formatError, LOG_PREFIX } from "@/shared/log";
 import { openCustomTimerPopup } from "@/features/timers/background/popup";
+import { openSettingsPopup } from "@/features/settings/background/popup";
 import type { WorkspaceAdapter } from "@/features/zen/adapter";
 import { isUsableBrowserTabId } from "@/features/zen/anchor";
 import { changeSelectedTabLabel } from "@/features/forge/background/label-command";
@@ -10,7 +11,7 @@ interface OmnibarOptions {
   warmSnapshot?: (anchorTabId: number) => void;
 }
 
-/** Toggles the omnibar for the tab the user acted in: the shortcut or the toolbar button. */
+/** Toggles the omnibar for the tab the user pressed the shortcut in. */
 function toggleOmnibarFromTab(
   tab: { id?: number; url?: string } | undefined,
   options: OmnibarOptions,
@@ -30,10 +31,11 @@ export function registerCommands(
 ): void {
   // A leftover setPopup (or an old build's default_popup) swallows the click.
   void browser.browserAction.setPopup({ popup: "" });
-  // The toolbar button has no popup, so clicking it opens the same overlay as Alt+F.
+  // The toolbar button has no popup, so a click fires onClicked: it opens settings.
+  // The omnibar has its own shortcut (Alt+F).
   browser.browserAction.onClicked.addListener((tab) => {
     debugLog(`${LOG_PREFIX} toolbar button clicked`, { tabId: tab.id, url: tab.url });
-    toggleOmnibarFromTab(tab, options);
+    void openSettingsPopup();
   });
 
   browser.commands.onCommand.addListener((command, tab) => {
