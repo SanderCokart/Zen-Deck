@@ -10,6 +10,7 @@ import {
   type ForgeIssueEntry,
   type ForgePlatform,
 } from "@/features/forge/model/forge-label";
+import { ticketFolderName, ticketNumbersIn } from "@/features/forge/model/ticket-number";
 import type { ZenFolderInfo } from "@/shared/messaging/bridge-protocol";
 import { pluralize } from "@/shared/text";
 import {
@@ -17,6 +18,7 @@ import {
   tabBrowserId,
   tabBrowserIds,
   type ForgeOrganizeMode,
+  type TabInfo,
 } from "@/shared/types";
 
 export const FORGE_ORGANIZE_MODES = [
@@ -68,6 +70,9 @@ export function organizeForgePreviewTree(mode: ForgeOrganizeMode): string {
       "└─ MRs / PRs",
       "   ├─ #12 Title",
       "   │  ├─ issue",
+      "   │  └─ MR / PR",
+      "   ├─ #345715 Ticket",
+      "   │  ├─ ticket tab",
       "   │  └─ MR / PR",
       "   └─ branch",
       "      └─ MR / PR",
@@ -135,41 +140,81 @@ function treeChildren(platform: ForgePlatform, project: ForgeIssueProjectGroup):
   return children;
 }
 
+/**
+ * Non-forge tabs in one space, indexed by the ticket numbers in their titles.
+ * Each tab joins at most one folder: the first group that claims it.
+ */
+interface TicketTabs {
+  byNumber: ReadonlyMap<string, readonly TabInfo[]>;
+  claimed: Set<number>;
+}
+
+function tabText(tab: Pick<TabInfo, "customLabel" | "title">): string {
+  return [tab.customLabel, tab.title].filter(Boolean).join(" ");
+}
+
+function buildTicketTabs(tabs: readonly TabInfo[]): TicketTabs {
+  const byNumber = new Map<string, TabInfo[]>();
+  for (const tab of tabs) {
+    if (isEssentialTab(tab) || tabBrowserId(tab) === undefined) {
+      continue;
+    }
+    for (const ticket of ticketNumbersIn(tabText(tab))) {
+      const list = byNumber.get(ticket) ?? [];
+      list.push(tab);
+      byNumber.set(ticket, list);
+    }
+  }
+  return { byNumber, claimed: new Set() };
+}
+
+function entryTicketNumbers(entry: ForgeIssueEntry, related?: string): string[] {
+  return ticketNumbersIn(tabText(entry.tab), [entry.ref.id, related]);
+}
+
+/** Claims the open ticket tabs for these numbers and returns their ids. */
+function claimTicketTabs(tickets: TicketTabs, numbers: readonly string[]): number[] {
+  const ids: number[] = [];
+  for (const ticket of numbers) {
+    for (const tab of tickets.byNumber.get(ticket) ?? []) {
+      const id = tabBrowserId(tab);
+      if (id === undefined || tickets.claimed.has(id)) {
+        continue;
+      }
+      tickets.claimed.add(id);
+      ids.push(id);
+    }
+  }
+  return ids;
+}
+
 function byIssueChildren(
   platform: ForgePlatform,
   project: ForgeIssueProjectGroup,
+  tickets: TicketTabs,
 ): ForgeFolderPlan[] {
   const issueById = new Map(project.issues.map((entry) => [entry.ref.id, entry]));
   const grouped = new Map<string, ForgeIssueEntry[]>();
-  const unlinkedByBranch: { targetBranch?: string; requests: ForgeIssueEntry[] }[] = [];
+  const placed = new Set<ForgeIssueEntry>();
 
   for (const branch of project.branches) {
-    const leftover: ForgeIssueEntry[] = [];
     for (const request of branch.requests) {
       const related = relatedIssueIdFromLabel(request.tab.customLabel, request.ref.id);
       if (related) {
         const list = grouped.get(related) ?? [];
         list.push(request);
         grouped.set(related, list);
-      } else {
-        leftover.push(request);
+        placed.add(request);
       }
     }
-    if (leftover.length > 0) {
-      unlinkedByBranch.push({ targetBranch: branch.targetBranch, requests: leftover });
+  }
+  for (const id of grouped.keys()) {
+    const issue = issueById.get(id);
+    if (issue) {
+      placed.add(issue);
     }
   }
 
-  const linkedIssueIds = new Set(grouped.keys());
-  const unlinkedIssues = project.issues.filter((issue) => !linkedIssueIds.has(issue.ref.id));
-
-  const children: ForgeFolderPlan[] = [];
-  const unlinkedIds = tabIdsOf(unlinkedIssues);
-  if (unlinkedIds.length > 0) {
-    children.push({ name: "Issues", tabIds: unlinkedIds, children: [] });
-  }
-
-  const requestChildren: ForgeFolderPlan[] = [];
   const orderedIssueIds: string[] = [];
   for (const issue of project.issues) {
     if (grouped.has(issue.ref.id)) {
@@ -182,10 +227,16 @@ function byIssueChildren(
     }
   }
 
+  const requestChildren: ForgeFolderPlan[] = [];
   for (const id of orderedIssueIds) {
     const requests = grouped.get(id) ?? [];
     const issue = issueById.get(id);
-    const tabs = [...tabIdsOf(issue ? [issue] : []), ...tabIdsOf(requests)];
+    const members = issue ? [issue, ...requests] : requests;
+    const ticketIds = claimTicketTabs(
+      tickets,
+      members.flatMap((entry) => entryTicketNumbers(entry, id)),
+    );
+    const tabs = [...tabIdsOf(issue ? [issue] : []), ...ticketIds, ...tabIdsOf(requests)];
     if (tabs.length === 0) {
       continue;
     }
@@ -196,8 +247,57 @@ function byIssueChildren(
     });
   }
 
-  for (const branch of unlinkedByBranch) {
-    const ids = tabIdsOf(branch.requests);
+  // Issues and requests not linked to each other may still share a ticket
+  // number with a tab from another tracker. A folder is only made when both a
+  // ticket tab and a forge tab end up in it; otherwise everything stays put.
+  const byTicket = new Map<string, { issues: ForgeIssueEntry[]; requests: ForgeIssueEntry[] }>();
+  const addCandidate = (entry: ForgeIssueEntry, kind: "issues" | "requests"): void => {
+    if (placed.has(entry) || movableForgeTabId(entry.tab) === undefined) {
+      return;
+    }
+    const ticket = entryTicketNumbers(entry).find((number) => tickets.byNumber.has(number));
+    if (!ticket) {
+      return;
+    }
+    const group = byTicket.get(ticket) ?? { issues: [], requests: [] };
+    group[kind].push(entry);
+    byTicket.set(ticket, group);
+  };
+  for (const issue of project.issues) {
+    addCandidate(issue, "issues");
+  }
+  for (const branch of project.branches) {
+    for (const request of branch.requests) {
+      addCandidate(request, "requests");
+    }
+  }
+
+  const issueTicketFolders: ForgeFolderPlan[] = [];
+  for (const [ticket, group] of byTicket) {
+    const ticketIds = claimTicketTabs(tickets, [ticket]);
+    if (ticketIds.length === 0) {
+      continue;
+    }
+    for (const entry of [...group.issues, ...group.requests]) {
+      placed.add(entry);
+    }
+    const ticketTab = tickets.byNumber.get(ticket)?.[0];
+    const folder: ForgeFolderPlan = {
+      name: ticketFolderName(ticket, ticketTab?.customLabel?.trim() || ticketTab?.title),
+      tabIds: [...tabIdsOf(group.issues), ...ticketIds, ...tabIdsOf(group.requests)],
+      children: [],
+    };
+    (group.requests.length > 0 ? requestChildren : issueTicketFolders).push(folder);
+  }
+
+  const children: ForgeFolderPlan[] = [];
+  const unlinkedIds = tabIdsOf(project.issues.filter((issue) => !placed.has(issue)));
+  if (unlinkedIds.length > 0 || issueTicketFolders.length > 0) {
+    children.push({ name: "Issues", tabIds: unlinkedIds, children: issueTicketFolders });
+  }
+
+  for (const branch of project.branches) {
+    const ids = tabIdsOf(branch.requests.filter((request) => !placed.has(request)));
     if (ids.length === 0) {
       continue;
     }
@@ -222,8 +322,10 @@ function plansForSpace(
   entries: ForgeIssueEntry[],
   mode: ForgeOrganizeMode,
   spaceId: string | undefined,
+  ticketTabs: readonly TabInfo[],
 ): ForgeFolderPlan[] {
   const providers = groupForgeIssueEntries(entries, "recent");
+  const tickets = buildTicketTabs(ticketTabs);
   const plans: ForgeFolderPlan[] = [];
   for (const provider of providers) {
     const siblingLabels = provider.projects.map((project) => project.projectLabel);
@@ -231,7 +333,7 @@ function plansForSpace(
       const children =
         mode === "tree"
           ? treeChildren(provider.platform, project)
-          : byIssueChildren(provider.platform, project);
+          : byIssueChildren(provider.platform, project, tickets);
       if (children.length === 0) {
         continue;
       }
@@ -250,10 +352,14 @@ function plansForSpace(
  * Folder trees that match the Issues and requests column (`tree`) or group each
  * issue with the MRs/PRs that mention it (`byIssue`). One top-level project
  * folder per space the tabs already live in.
+ *
+ * In `byIssue` mode, `ticketTabs` (tabs from other trackers) join the folder of
+ * an MR/PR in the same space whose title shares a ticket number with theirs.
  */
 export function planForgeTabFolders(
   entries: readonly ForgeIssueEntry[],
   mode: ForgeOrganizeMode,
+  ticketTabs: readonly TabInfo[] = [],
 ): ForgeFolderPlan[] {
   const bySpace = new Map<string | undefined, ForgeIssueEntry[]>();
   for (const entry of entries) {
@@ -263,7 +369,12 @@ export function planForgeTabFolders(
     bySpace.set(spaceId, list);
   }
   return [...bySpace.entries()].flatMap(([spaceId, spaceEntries]) =>
-    plansForSpace(spaceEntries, mode, spaceId),
+    plansForSpace(
+      spaceEntries,
+      mode,
+      spaceId,
+      mode === "byIssue" ? ticketTabs.filter((tab) => tab.workspaceId === spaceId) : [],
+    ),
   );
 }
 

@@ -235,6 +235,169 @@ describe("planForgeTabFolders byIssue", () => {
       },
     ]);
   });
+
+  it("groups an MR with a ticket tab from another tracker that shares its number", () => {
+    const ticket = tab({
+      id: 10,
+      url: "https://helpdesk.example/tickets/482913",
+      title: "[#482913] Re[2]: Checkout total : Helpdesk",
+    });
+    const unrelated = tab({
+      id: 11,
+      url: "https://helpdesk.example/tickets/700001",
+      title: "[#700001] Other",
+    });
+    const mr = tab({
+      id: 2,
+      url: "https://gitlab.com/acme/app/-/merge_requests/512",
+      customLabel: "MR: !512 - Draft: [482913]: fix checkout total",
+      forgeTargetBranch: "main",
+    });
+
+    const plan = planForgeTabFolders(entries([mr]), "byIssue", [ticket, unrelated]);
+
+    expect(plan[0]?.children).toEqual([
+      {
+        name: "MRs",
+        tabIds: [],
+        children: [
+          { name: "#482913 Re[2]: Checkout total : Helpdesk", tabIds: [10, 2], children: [] },
+        ],
+      },
+    ]);
+  });
+
+  it("adds a ticket tab to the issue folder when the linked MR names the ticket", () => {
+    const plan = planForgeTabFolders(
+      entries([
+        tab({
+          id: 1,
+          url: "https://gitlab.com/acme/app/-/issues/4",
+          customLabel: "ISSUE: #4 - Login",
+        }),
+        tab({
+          id: 2,
+          url: "https://gitlab.com/acme/app/-/merge_requests/8",
+          customLabel: "MR: #4 - !8 - [482913] Login",
+        }),
+      ]),
+      "byIssue",
+      [tab({ id: 10, url: "https://helpdesk.example/t/1", title: "@482913 Login broken" })],
+    );
+
+    expect(plan[0]?.children[0]?.children[0]).toEqual({
+      name: "#4 Login",
+      tabIds: [1, 10, 2],
+      children: [],
+    });
+  });
+
+  it("groups an unlinked issue with a ticket tab inside the Issues folder", () => {
+    const plan = planForgeTabFolders(
+      entries([
+        tab({
+          id: 1,
+          url: "https://gitlab.com/acme/app/-/issues/4",
+          customLabel: "ISSUE: #4 - [482913] Login",
+        }),
+        tab({
+          id: 3,
+          url: "https://gitlab.com/acme/app/-/issues/5",
+          customLabel: "ISSUE: #5 - Other",
+        }),
+      ]),
+      "byIssue",
+      [tab({ id: 10, url: "https://helpdesk.example/t/1", title: "[482913] Login broken" })],
+    );
+
+    expect(plan[0]?.children).toEqual([
+      {
+        name: "Issues",
+        tabIds: [3],
+        children: [{ name: "#482913 Login broken", tabIds: [1, 10], children: [] }],
+      },
+    ]);
+  });
+
+  it("leaves ticket tabs alone when no issue or MR shares their number", () => {
+    const plan = planForgeTabFolders(
+      entries([
+        tab({
+          id: 1,
+          url: "https://gitlab.com/acme/app/-/issues/4",
+          customLabel: "ISSUE: #4 - Login",
+        }),
+      ]),
+      "byIssue",
+      [tab({ id: 10, url: "https://helpdesk.example/t/1", title: "[482913] Login broken" })],
+    );
+
+    expect(JSON.stringify(plan)).not.toContain("482913");
+    expect(JSON.stringify(plan)).not.toContain("10");
+  });
+
+  it("keeps an MR under its branch when its ticket tab already joined another folder", () => {
+    const plan = planForgeTabFolders(
+      entries([
+        tab({
+          id: 1,
+          url: "https://gitlab.com/acme/app/-/issues/4",
+          customLabel: "ISSUE: #4 - Login",
+        }),
+        tab({
+          id: 2,
+          url: "https://gitlab.com/acme/app/-/merge_requests/8",
+          customLabel: "MR: #4 - !8 - [482913] Login",
+          forgeTargetBranch: "main",
+        }),
+        tab({
+          id: 3,
+          url: "https://gitlab.com/acme/app/-/merge_requests/9",
+          customLabel: "MR: !9 - [482913] Follow-up",
+          forgeTargetBranch: "main",
+        }),
+      ]),
+      "byIssue",
+      [tab({ id: 10, url: "https://helpdesk.example/t/1", title: "[482913] Login broken" })],
+    );
+
+    expect(plan[0]?.children).toEqual([
+      {
+        name: "MRs",
+        tabIds: [],
+        children: [
+          { name: "#4 Login", tabIds: [1, 10, 2], children: [] },
+          { name: "main", tabIds: [3], children: [] },
+        ],
+      },
+    ]);
+  });
+
+  it("ignores ticket tabs in other spaces and in tree mode", () => {
+    const mr = tab({
+      id: 2,
+      url: "https://gitlab.com/acme/app/-/merge_requests/512",
+      customLabel: "MR: !512 - [482913] fix",
+    });
+    const elsewhere = tab({
+      id: 10,
+      url: "https://helpdesk.example/t/1",
+      title: "[482913] Ticket",
+      workspaceId: "home",
+    });
+    const here = { ...elsewhere, workspaceId: "work" };
+
+    expect(planForgeTabFolders(entries([mr]), "byIssue", [elsewhere])[0]?.children).toEqual([
+      {
+        name: "MRs",
+        tabIds: [],
+        children: [{ name: "target unknown", tabIds: [2], children: [] }],
+      },
+    ]);
+    expect(JSON.stringify(planForgeTabFolders(entries([mr]), "tree", [here]))).not.toContain(
+      "482913",
+    );
+  });
 });
 
 describe("folder naming helpers", () => {

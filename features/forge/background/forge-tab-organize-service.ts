@@ -26,7 +26,9 @@ export async function organizeForgeIssueTabs(options: {
     return id !== undefined && allowed.has(id);
   });
   const skipped = entries.length - countMovableForgeTabs(entries);
-  const plans = planForgeTabFolders(entries, options.mode);
+  const forgeTabs = new Set(buildForgeIssueEntries(options.tabs).map((entry) => entry.tab));
+  const ticketTabs = options.tabs.filter((tab) => !forgeTabs.has(tab));
+  const plans = planForgeTabFolders(entries, options.mode, ticketTabs);
   if (plans.length === 0) {
     return { foldersCreated: 0, tabsMoved: 0, skipped };
   }
