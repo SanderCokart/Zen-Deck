@@ -4,6 +4,7 @@ import { formatError, LOG_PREFIX } from "@/shared/log";
 import { parseContentCommand, SNAPSHOT_CHANGED_TYPE } from "@/shared/messaging/protocol";
 import { SearchApp } from "@/features/search/ui/SearchApp";
 import { normalizeBranchName, parseTargetBranchText } from "@/features/forge/model/target-branch";
+import { watchNewTabLinkClicks } from "@/features/intercept/content/link-clicks";
 import { injectPageFonts } from "@/shared/ui/page-fonts";
 import "@/shared/ui/styles.css";
 
@@ -17,6 +18,7 @@ export default defineContentScript({
     debugLog("Zen Deck content script loaded at", new Date().toISOString());
     // The shadow root cannot declare its own font; see page-fonts.ts.
     injectPageFonts();
+    ctx.onInvalidated(watchNewTabLinkClicks());
 
     type OmnibarUi = Awaited<ReturnType<typeof createShadowRootUi>>;
     // Built once and remounted on every open: creating it fetches and parses the

@@ -65,6 +65,8 @@ export interface MessageRouterHandlers {
   setPinnedUrl(tabId: number, url: string): Promise<void>;
   replacePinnedUrlWithCurrent(tabId: number): Promise<void>;
   openUrl(url: string): Promise<void>;
+  /** A page in `sourceTabId` is opening `url` in a new tab from a link click. */
+  linkOpensNewTab(sourceTabId: number, url: string): Promise<void>;
   /** Anchor for a sender that is not a tab, such as the window-hosted omnibar. */
   anchorTabIdForSender?(sender: MessageSender): number | undefined;
   isAllowedTimerEnd(endAt: number): boolean;
@@ -223,6 +225,11 @@ function handleParsedRequest(
       return handlers.replacePinnedUrlWithCurrent(message.tabId);
     case "openUrl":
       return handlers.openUrl(message.url);
+    case "linkOpensNewTab":
+      // Only a page's own content script can report its links.
+      return isUsableSenderTab(sender.tab) && sender.tab?.id !== undefined
+        ? handlers.linkOpensNewTab(sender.tab.id, message.url)
+        : Promise.resolve();
   }
 }
 

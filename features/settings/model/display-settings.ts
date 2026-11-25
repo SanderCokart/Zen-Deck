@@ -76,7 +76,7 @@ const DEFAULTS = {
    * Text and controls stay opaque.
    */
   backgroundOpacity: 0.8,
-  /** Focus an already-open tab when another app opens the same address. */
+  /** Focus an already-open tab when another app or a page link opens the same address in a new tab. */
   reuseExternalTabs: false,
   /** Overlay fills the window. Off, it is a centered Spotlight card. */
   fullscreen: false,

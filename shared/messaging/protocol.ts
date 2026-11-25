@@ -192,6 +192,18 @@ export const errorResponseSchema = v.object({
   error: v.string(),
 });
 
+const httpUrlSchema = v.pipe(
+  v.string(),
+  v.check((value) => {
+    try {
+      const url = new URL(value);
+      return url.protocol === "http:" || url.protocol === "https:";
+    } catch {
+      return false;
+    }
+  }, "URL must be http(s)."),
+);
+
 export const extensionRequestSchema = v.variant("type", [
   v.object({
     type: v.literal("getTabs"),
@@ -372,17 +384,12 @@ export const extensionRequestSchema = v.variant("type", [
   }),
   v.object({
     type: v.literal("openUrl"),
-    url: v.pipe(
-      v.string(),
-      v.check((value) => {
-        try {
-          const url = new URL(value);
-          return url.protocol === "http:" || url.protocol === "https:";
-        } catch {
-          return false;
-        }
-      }, "URL must be http(s)."),
-    ),
+    url: httpUrlSchema,
+  }),
+  // A content script saw a plain click on a link that opens a new tab.
+  v.object({
+    type: v.literal("linkOpensNewTab"),
+    url: httpUrlSchema,
   }),
 ]);
 
@@ -500,6 +507,7 @@ export const EXTENSION_REQUEST_TYPES = [
   "setPinnedUrl",
   "replacePinnedUrlWithCurrent",
   "openUrl",
+  "linkOpensNewTab",
 ] as const;
 
 /**
@@ -584,6 +592,7 @@ export type ExtensionSuccessMap = {
   setPinnedUrl: void;
   replacePinnedUrlWithCurrent: void;
   openUrl: void;
+  linkOpensNewTab: void;
 };
 
 const clearTimerResponseSchema = v.object({
@@ -728,6 +737,7 @@ export function parseExtensionSuccess<T extends ExtensionRequestType>(
     case "setPinnedUrl":
     case "replacePinnedUrlWithCurrent":
     case "openUrl":
+    case "linkOpensNewTab":
       return undefined as ExtensionSuccessMap[T];
     case "getFolders":
       return v.parse(v.array(overlayFolderInfoSchema), value) as ExtensionSuccessMap[T];

@@ -72,6 +72,7 @@ function handlers(overrides: Partial<MessageRouterHandlers> = {}): MessageRouter
     setPinnedUrl: vi.fn(async () => undefined),
     replacePinnedUrlWithCurrent: vi.fn(async () => undefined),
     openUrl: vi.fn(async () => undefined),
+    linkOpensNewTab: vi.fn(async () => undefined),
     isAllowedTimerEnd: vi.fn(() => true),
     ...overrides,
   };
@@ -424,6 +425,26 @@ describe("dispatchExtensionMessage", () => {
     }
     await expect(result.promise).resolves.toBeUndefined();
     expect(api.openUrl).toHaveBeenCalledWith("https://www.google.com/search?q=tabs");
+  });
+
+  it("passes a page's new-tab link click on with the tab it came from", async () => {
+    const api = handlers();
+    const message = { type: "linkOpensNewTab", url: "https://example.com/a/tickets/1" };
+    const fromPage = dispatchExtensionMessage(api, message, {
+      tab: { id: 5, url: "https://gitlab.example.com/issues/1" },
+    });
+    if (!fromPage.handled || !fromPage.async) {
+      throw new Error("expected async dispatch");
+    }
+    await fromPage.promise;
+    expect(api.linkOpensNewTab).toHaveBeenCalledWith(5, "https://example.com/a/tickets/1");
+
+    const fromExtensionPage = dispatchExtensionMessage(api, message, {});
+    if (!fromExtensionPage.handled || !fromExtensionPage.async) {
+      throw new Error("expected async dispatch");
+    }
+    await fromExtensionPage.promise;
+    expect(api.linkOpensNewTab).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a host override with an invalid IP", () => {

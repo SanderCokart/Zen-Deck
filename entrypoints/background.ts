@@ -44,6 +44,7 @@ import {
   registerTabLastOpenedTracking,
 } from "@/features/zen/tab-last-opened";
 import { registerBrowserExternalTabReuse } from "@/features/intercept/background/external-tab";
+import { registerBrowserPageLinkReuse } from "@/features/intercept/background/page-link";
 import { startBridgeClient } from "@/features/bridge/background/bridge-client";
 import { createBridgeCommandHandler } from "@/features/bridge/background/zen-commands";
 import {
@@ -122,12 +123,15 @@ export default defineBackground(() => {
   });
   registerHostOverrides(hostOverrideService);
   registerPopupWindowTracking();
-  registerBrowserExternalTabReuse({
-    listTabs: (anchorTabId) => workspace.listTabs(anchorTabId),
-    activateTab: (tabId, domId, anchorTabId) => workspace.activateTab(tabId, domId, anchorTabId),
-    removeTab: (tabId) => browser.tabs.remove(tabId),
+  const tabReuseDeps = {
+    listTabs: (anchorTabId?: number) => workspace.listTabs(anchorTabId),
+    activateTab: (tabId?: number, domId?: string, anchorTabId?: number) =>
+      workspace.activateTab(tabId, domId, anchorTabId),
+    removeTab: (tabId: number) => browser.tabs.remove(tabId),
     recordOpened: recordTabLastOpened,
-  });
+  };
+  registerBrowserExternalTabReuse(tabReuseDeps);
+  const pageLinkReuse = registerBrowserPageLinkReuse(tabReuseDeps);
   registerCommands(workspace, {
     warmSnapshot: (anchorTabId) => {
       void snapshotCache.getSnapshot(anchorTabId).catch(() => {
@@ -365,6 +369,9 @@ export default defineBackground(() => {
     },
     openUrl: async (url) => {
       await browser.tabs.create({ url, active: true });
+    },
+    linkOpensNewTab: async (sourceTabId, url) => {
+      pageLinkReuse.claim(sourceTabId, url);
     },
     anchorTabIdForSender: (sender) =>
       sender.tab === undefined && sender.url?.startsWith(browser.runtime.getURL(OMNIBAR_PAGE))
