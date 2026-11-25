@@ -125,6 +125,8 @@ export function installBrowserMock(
       case "setTabLabel":
       case "setTodo":
       case "setTabStatus":
+      case "setTabTags":
+      case "removeTagFromTabs":
       case "clearTodos":
       case "getDebugInfo":
       case "closeTab":

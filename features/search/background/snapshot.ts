@@ -1,4 +1,4 @@
-import type { SpaceInfo, TabInfo, TabStatus, TabTimer } from "@/shared/types";
+import type { SpaceInfo, TabInfo, TabStatus, TabTags, TabTimer } from "@/shared/types";
 import { tabBrowserIds } from "@/shared/types";
 import { debugLog } from "@/shared/debug";
 import { LOG_PREFIX } from "@/shared/log";
@@ -15,6 +15,7 @@ export interface SearchSnapshotPayload {
   spaces: SpaceInfo[];
   timers: TabTimer[];
   statuses: TabStatus[];
+  tags: TabTags[];
 }
 
 export function createSnapshotReader(deps: {
@@ -22,6 +23,7 @@ export function createSnapshotReader(deps: {
   getSpaces(anchorTabId?: number): Promise<SpaceInfo[]>;
   getTimers(tabIds?: number[]): Promise<TabTimer[]>;
   getStatuses?(tabIds: number[]): Promise<TabStatus[]>;
+  getTags?(tabIds: number[]): Promise<TabTags[]>;
   readLastOpened?(): Promise<Record<string, number>>;
   readTargetBranches?(): Promise<StoredTargetBranches>;
 }): (anchorTabId?: number) => Promise<SearchSnapshotPayload> {
@@ -41,9 +43,10 @@ export function createSnapshotReader(deps: {
         debugLog(`${LOG_PREFIX} snapshot ${label}: ${(performance.now() - begun).toFixed(1)} ms`);
       });
     };
-    const [timers, statuses] = await Promise.all([
+    const [timers, statuses, tags] = await Promise.all([
       timed("timers", deps.getTimers(tabIds)),
       timed("statuses", deps.getStatuses ? deps.getStatuses(tabIds) : Promise.resolve([])),
+      timed("tags", deps.getTags ? deps.getTags(tabIds) : Promise.resolve([])),
     ]);
     debugLog(
       `${LOG_PREFIX} snapshot tabs+spaces: ${(tabsReady - started).toFixed(1)} ms, ` +
@@ -54,6 +57,7 @@ export function createSnapshotReader(deps: {
       spaces,
       timers,
       statuses,
+      tags,
     };
   };
 }

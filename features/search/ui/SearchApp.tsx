@@ -16,10 +16,7 @@ import {
 } from "@/features/search/model/tab-folder-collapse";
 import type { ForgeIssueSortMode } from "@/features/search/model/ranking";
 import { pluralize } from "@/shared/text";
-import { applyTodoOrder } from "@/features/todos/model/todo";
-import { visibleTodoTabs } from "@/features/todos/model/todo-folders";
 import { TodoNavigator } from "@/features/todos/ui/TodoNavigator";
-import { useTodoFolders } from "@/features/todos/ui/useTodoFolders";
 import { useTodoOrder } from "@/features/todos/ui/useTodoOrder";
 import { TimersDock } from "@/features/timers/ui/TimersDock";
 import {
@@ -85,6 +82,10 @@ import { Led } from "@/shared/ui/primitives/Led";
 import { TipText } from "@/shared/ui/primitives/Tooltip";
 import { TooltipButton } from "@/features/search/ui/components/TooltipButton";
 import { useSoundEngine } from "@/shared/ui/sound/SoundContext";
+import { TagContext } from "@/features/tags/ui/TagContext";
+import { TAG_MENU_TRIGGER_SELECTOR } from "@/features/tags/ui/TagButton";
+import { TAG_MENU_SELECTOR, TagMenu } from "@/features/tags/ui/TagMenu";
+import { useTags } from "@/features/tags/ui/useTags";
 
 export type { SearchLayout };
 
@@ -145,7 +146,6 @@ export function SearchApp({
   const revealSeen = useRef(reveal);
   const [forgeSortMode, setForgeSortMode] = useState<ForgeIssueSortMode>("asc");
   const todoOrder = useTodoOrder(cache);
-  const todoFolders = useTodoFolders(cache);
   const [forgeKindFilter, setForgeKindFilter] = useState<ForgeKindFilter>("all");
   const forgeCollapse = useForgeCollapse(cache);
   const tabFolderCollapse = useStoredCollapse(TAB_FOLDER_COLLAPSED_STORAGE_KEY, cache);
@@ -171,12 +171,14 @@ export function SearchApp({
     timers,
     todos,
     statuses,
+    tabTags,
     loadError,
     loaded: snapshotLoaded,
     setTabs,
     setTimers,
     setTodos,
     setStatuses,
+    setTabTags,
   } = useSearchSnapshot(cache);
   const { displaySettings, loaded: settingsLoaded, setDisplaySettings } = useDisplaySettings(cache);
   const { setupDone, completeSetup } = useComplexitySetup();
@@ -213,11 +215,18 @@ export function SearchApp({
   const rename = useTabRename({ essentialNames, setEssentialNames, setTabs });
   const todoActions = useTodoActions({ setTodos, setStatuses });
   const statusActions = useStatusActions({ setStatuses });
+  const tagState = useTags({
+    cache,
+    tabTags,
+    setTabTags,
+    onLatch: (down) => sound.play(down ? "latch-down" : "latch-up"),
+    onOpen: () => {
+      setStatusMenu(null);
+      setContextMenu(null);
+    },
+  });
+  const closeTagMenu = tagState.closeMenu;
   const todoTabs = results.todoTabs;
-  const keyboardTodoTabs = useMemo(
-    () => visibleTodoTabs(todoTabs, todoFolders.state, results.todoNavigatorQuery.active),
-    [results.todoNavigatorQuery.active, todoFolders.state, todoTabs],
-  );
 
   useCloseOnOutsideClick(contextMenu !== null, "[data-testid='zen-tab-context-menu']", () =>
     setContextMenu(null),
@@ -227,6 +236,12 @@ export function SearchApp({
     statusMenu !== null,
     `${TRAFFIC_LIGHT_MENU_SELECTOR}, ${TRAFFIC_LIGHT_TRIGGER_SELECTOR}`,
     () => setStatusMenu(null),
+  );
+
+  useCloseOnOutsideClick(
+    tagState.menu !== null,
+    `${TAG_MENU_SELECTOR}, ${TAG_MENU_TRIGGER_SELECTOR}`,
+    closeTagMenu,
   );
 
   /** The tab the omnibar or popup was opened over, which the header buttons act on. */
@@ -268,16 +283,18 @@ export function SearchApp({
       if (!displaySettings.contextMenu) return;
       event.preventDefault();
       setStatusMenu(null);
+      closeTagMenu();
       setContextMenu({ tab, x: event.clientX, y: event.clientY });
       sound.play("open");
     },
-    [displaySettings.contextMenu, sound],
+    [closeTagMenu, displaySettings.contextMenu, sound],
   );
 
   const toggleStatusMenu = useCallback(
     (tab: TabInfo, anchor: DOMRect) => {
       const tabId = tabBrowserId(tab);
       setContextMenu(null);
+      closeTagMenu();
       // The status key latches while its menu is open.
       if (tabId !== undefined) sound.play(statusMenu?.tabId === tabId ? "latch-up" : "latch-down");
       setStatusMenu((current) =>
@@ -286,7 +303,7 @@ export function SearchApp({
           : { tabId, x: anchor.left, y: anchor.bottom + 4 },
       );
     },
-    [sound, statusMenu],
+    [closeTagMenu, sound, statusMenu],
   );
 
   const requestClose = useCallback(() => {
@@ -357,9 +374,7 @@ export function SearchApp({
   // detection flag here reserved a second column before any issues existed,
   // so the panel jumped the moment the snapshot arrived.
   const showForgeColumn = displaySettings.forgeTree && results.forgeIssueEntries.length > 0;
-  const showTodoColumn =
-    displaySettings.todos &&
-    (results.allTodoTabs.length > 0 || todoFolders.state.folders.length > 0);
+  const showTodoColumn = displaySettings.todos && results.allTodoTabs.length > 0;
   // Fullscreen has room for the soonest LCD and the next two. Spotlight keeps
   // timers behind the header key so the card does not grow a third pane.
   const showTimersDock =
@@ -373,7 +388,7 @@ export function SearchApp({
       forgeCollapse.loaded &&
       tabFolderCollapse.loaded &&
       todoOrder.loaded &&
-      todoFolders.loaded &&
+      tagState.loaded &&
       (setupDone ? snapshotLoaded : true),
   );
 
@@ -384,7 +399,7 @@ export function SearchApp({
     pageJump,
     items: results.items,
     navigatorEntries: results.navigatorEntries,
-    todoTabs: keyboardTodoTabs,
+    todoTabs,
     forgeNavigatorQuery: results.forgeNavigatorQuery,
     todoNavigatorQuery: results.todoNavigatorQuery,
     bestForgeIndex: results.bestForgeIndex,
@@ -427,6 +442,7 @@ export function SearchApp({
     setShowTimers(false);
     setContextMenu(null);
     setStatusMenu(null);
+    closeTagMenu();
     setPinnedUrlDialog(null);
     const frame = requestAnimationFrame(() => {
       const input = navigation.inputRef.current;
@@ -457,6 +473,7 @@ export function SearchApp({
     navigation.inputRef.current?.focus();
   }, [navigation.inputRef]);
 
+  const tagMenuOpen = tagState.menu !== null;
   // Escape always closes the whole search, whatever view, menu or form is
   // open. Embedded panels leave Escape to this handler.
   useEffect(() => {
@@ -464,11 +481,16 @@ export function SearchApp({
       if (event.key !== "Escape") return;
       event.preventDefault();
       event.stopPropagation();
+      // An open tag menu has its own input; Escape closes just the menu.
+      if (tagMenuOpen) {
+        closeTagMenu();
+        return;
+      }
       requestClose();
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [requestClose]);
+  }, [closeTagMenu, requestClose, tagMenuOpen]);
 
   const timersOpen = swapsViews ? view?.kind === "timers" : showTimers;
   const toggleTimers = () => {
@@ -520,534 +542,550 @@ export function SearchApp({
   const nestedPanes = layout === "overlay" && displaySettings.fullscreen;
 
   return (
-    <SearchShell
-      layout={layout}
-      onClose={onClose}
-      onRequestClose={requestClose}
-      displaySettings={displaySettings}
-      aspect={layout === "overlay" ? overlayAspect : "1/1"}
-      chassis={setupInProgress ? "setup" : undefined}
-      open={layout === "overlay" ? overlayOpen : true}
-      shownGeneration={reveal}
-      closeRequest={closeRequest + hideRequest}
-      sound={sound}
-    >
-      {setupInProgress ? (
-        <ComplexitySetupCard
-          settings={{ ...displaySettings, ...setupDraft }}
-          onChange={setSetupDraft}
-          onOpenTransitionChange={(openTransition) => {
-            const next = { ...displaySettings, openTransition };
-            setDisplaySettings(next);
-            void saveDisplaySettings(next).catch((error) =>
-              debugError("Could not save open transition:", error),
-            );
-          }}
-          onContinue={() => {
-            const next = { ...displaySettings, ...setupDraft };
-            setDisplaySettings(next);
-            void saveDisplaySettings(next).catch((error) =>
-              debugError("Could not save complexity:", error),
-            );
-            completeSetup();
-          }}
-        />
-      ) : (
-        <>
-          <div class="mb-[var(--zen-space-5)] flex items-center gap-[var(--zen-space-3)]">
-            <SearchInput
-              inputRef={navigation.inputRef}
-              compact={compact}
-              initialValue={revealing ? revealedQuery : query}
-              resetToken={reveal}
-              inert={view?.kind === "timer" || view?.kind === "hosts"}
-              searchEngine={displaySettings.searchEngine}
-              onSearchEngineChange={onSearchEngineChange}
-              todos={displaySettings.todos}
-              forge={displaySettings.detectForgeIssues}
-              onQueryChange={(next) => {
-                setQuery(next);
-                // Typing goes back to the search the input is for.
-                if (view) setView(undefined);
-              }}
-              onKeyDown={navigation.onKeyDown}
-            />
-            {displaySettings.timers && (
-              <TooltipButton
-                label={timersOpen ? "Close active timers" : "Show active timers"}
-                tooltip={timersOpen ? "Close timers" : "Timers"}
-                class={cn(iconButtonClass, "relative")}
-                aria-pressed={timersOpen}
-                onClick={toggleTimers}
-              >
-                <TimerIcon class="size-[var(--zen-icon-md)]" />
-                <Led on={timersOpen} />
-                {!timersOpen && timers.size > 0 && (
-                  <span
-                    class={cn(
-                      "bg-zen-badge absolute -top-1 -right-1 rounded-full text-center text-white",
-                      "min-w-[var(--zen-icon-md)] px-[var(--zen-space-1)]",
-                      "text-[length:var(--zen-text-xs)] leading-[var(--zen-icon-md)]",
-                    )}
-                  >
-                    {timers.size}
-                  </span>
-                )}
-              </TooltipButton>
-            )}
-            {displaySettings.hosts && (
-              <TooltipButton
-                label="Host overrides for this tab"
-                tooltip="Hosts"
-                class={cn(iconButtonClass, "relative")}
-                aria-pressed={swapsViews ? hostsOpen : undefined}
-                disabled={currentTabId === undefined}
-                onClick={() => {
-                  if (currentTabId === undefined) return;
-                  if (hostsOpen) closeView();
-                  else openHostOverrides(currentTabId);
+    <TagContext.Provider value={displaySettings.tags ? tagState.context : null}>
+      <SearchShell
+        layout={layout}
+        onClose={onClose}
+        onRequestClose={requestClose}
+        displaySettings={displaySettings}
+        aspect={layout === "overlay" ? overlayAspect : "1/1"}
+        chassis={setupInProgress ? "setup" : undefined}
+        open={layout === "overlay" ? overlayOpen : true}
+        shownGeneration={reveal}
+        closeRequest={closeRequest + hideRequest}
+        sound={sound}
+      >
+        {setupInProgress ? (
+          <ComplexitySetupCard
+            settings={{ ...displaySettings, ...setupDraft }}
+            onChange={setSetupDraft}
+            onOpenTransitionChange={(openTransition) => {
+              const next = { ...displaySettings, openTransition };
+              setDisplaySettings(next);
+              void saveDisplaySettings(next).catch((error) =>
+                debugError("Could not save open transition:", error),
+              );
+            }}
+            onContinue={() => {
+              const next = { ...displaySettings, ...setupDraft };
+              setDisplaySettings(next);
+              void saveDisplaySettings(next).catch((error) =>
+                debugError("Could not save complexity:", error),
+              );
+              completeSetup();
+            }}
+          />
+        ) : (
+          <>
+            <div class="mb-[var(--zen-space-5)] flex items-center gap-[var(--zen-space-3)]">
+              <SearchInput
+                inputRef={navigation.inputRef}
+                compact={compact}
+                initialValue={revealing ? revealedQuery : query}
+                resetToken={reveal}
+                inert={view?.kind === "timer" || view?.kind === "hosts"}
+                searchEngine={displaySettings.searchEngine}
+                onSearchEngineChange={onSearchEngineChange}
+                todos={displaySettings.todos}
+                forge={displaySettings.detectForgeIssues}
+                onQueryChange={(next) => {
+                  setQuery(next);
+                  // Typing goes back to the search the input is for.
+                  if (view) setView(undefined);
                 }}
+                onKeyDown={navigation.onKeyDown}
+              />
+              {displaySettings.timers && (
+                <TooltipButton
+                  label={timersOpen ? "Close active timers" : "Show active timers"}
+                  tooltip={timersOpen ? "Close timers" : "Timers"}
+                  class={cn(iconButtonClass, "relative")}
+                  aria-pressed={timersOpen}
+                  onClick={toggleTimers}
+                >
+                  <TimerIcon class="size-[var(--zen-icon-md)]" />
+                  <Led on={timersOpen} />
+                  {!timersOpen && timers.size > 0 && (
+                    <span
+                      class={cn(
+                        "bg-zen-badge absolute -top-1 -right-1 rounded-full text-center text-white",
+                        "min-w-[var(--zen-icon-md)] px-[var(--zen-space-1)]",
+                        "text-[length:var(--zen-text-xs)] leading-[var(--zen-icon-md)]",
+                      )}
+                    >
+                      {timers.size}
+                    </span>
+                  )}
+                </TooltipButton>
+              )}
+              {displaySettings.hosts && (
+                <TooltipButton
+                  label="Host overrides for this tab"
+                  tooltip="Hosts"
+                  class={cn(iconButtonClass, "relative")}
+                  aria-pressed={swapsViews ? hostsOpen : undefined}
+                  disabled={currentTabId === undefined}
+                  onClick={() => {
+                    if (currentTabId === undefined) return;
+                    if (hostsOpen) closeView();
+                    else openHostOverrides(currentTabId);
+                  }}
+                >
+                  <span aria-hidden="true" class="text-[length:var(--zen-text-base)]">
+                    ⇄
+                  </span>
+                  {swapsViews && <Led on={hostsOpen} />}
+                </TooltipButton>
+              )}
+              <TooltipButton
+                label="Open display settings"
+                tooltip="Settings"
+                class={iconButtonClass}
+                onClick={() =>
+                  void sendExtensionMessage({ type: "openSettings" }).catch((error) =>
+                    debugError("Could not open settings:", error),
+                  )
+                }
               >
                 <span aria-hidden="true" class="text-[length:var(--zen-text-base)]">
-                  ⇄
+                  ⚙
                 </span>
-                {swapsViews && <Led on={hostsOpen} />}
               </TooltipButton>
-            )}
-            <TooltipButton
-              label="Open display settings"
-              tooltip="Settings"
-              class={iconButtonClass}
-              onClick={() =>
-                void sendExtensionMessage({ type: "openSettings" }).catch((error) =>
-                  debugError("Could not open settings:", error),
-                )
-              }
-            >
-              <span aria-hidden="true" class="text-[length:var(--zen-text-base)]">
-                ⚙
-              </span>
-            </TooltipButton>
-          </div>
+            </div>
 
-          {results.currentTab &&
-            !(view?.kind === "timer" || view?.kind === "hosts") &&
-            (layout !== "overlay" || displaySettings.fullscreen) && (
-              <CurrentTabStrip
-                tab={results.currentTab}
-                forgeEntry={results.currentTabForgeEntry}
-                timer={timers.get(currentTabId ?? -1)}
-                isTodo={todos.has(currentTabId ?? -1)}
-                light={currentTabId === undefined ? undefined : statuses.get(currentTabId)}
-                statusMenuOpen={currentTabId !== undefined && statusMenu?.tabId === currentTabId}
-                truncate={
-                  results.currentTabForgeEntry
-                    ? displaySettings.truncateIssueTitles
-                    : displaySettings.truncateTabTitles
-                }
-                compact={compact}
-                onContextMenu={openContextMenu}
-                onToggleTodo={onToggleTodo}
+            {results.currentTab &&
+              !(view?.kind === "timer" || view?.kind === "hosts") &&
+              (layout !== "overlay" || displaySettings.fullscreen) && (
+                <CurrentTabStrip
+                  tab={results.currentTab}
+                  forgeEntry={results.currentTabForgeEntry}
+                  timer={timers.get(currentTabId ?? -1)}
+                  isTodo={todos.has(currentTabId ?? -1)}
+                  light={currentTabId === undefined ? undefined : statuses.get(currentTabId)}
+                  statusMenuOpen={currentTabId !== undefined && statusMenu?.tabId === currentTabId}
+                  truncate={
+                    results.currentTabForgeEntry
+                      ? displaySettings.truncateIssueTitles
+                      : displaySettings.truncateTabTitles
+                  }
+                  compact={compact}
+                  onContextMenu={openContextMenu}
+                  onToggleTodo={onToggleTodo}
+                  onOpenTimer={openTimer}
+                  onOpenStatusMenu={toggleStatusMenu}
+                  onClose={requestClose}
+                  displaySettings={displaySettings}
+                />
+              )}
+
+            {view && (
+              <OmnibarViewPanel
+                view={view}
+                timers={timers}
+                onBack={closeView}
+                onClearAll={timerActions.clearAllTimers}
+                onClearTimer={timerActions.clearTimer}
                 onOpenTimer={openTimer}
-                onOpenStatusMenu={toggleStatusMenu}
-                onClose={requestClose}
-                displaySettings={displaySettings}
+                onActivateTimer={(tabId) => {
+                  void sendExtensionMessage({ type: "switchTab", tabId }).then(requestClose);
+                }}
               />
             )}
 
-          {view && (
-            <OmnibarViewPanel
-              view={view}
-              timers={timers}
-              onBack={closeView}
-              onClearAll={timerActions.clearAllTimers}
-              onClearTimer={timerActions.clearTimer}
-              onOpenTimer={openTimer}
-              onActivateTimer={(tabId) => {
-                void sendExtensionMessage({ type: "switchTab", tabId }).then(requestClose);
-              }}
-            />
-          )}
-
-          {!swapsViews && showTimers && (
-            <ActiveTimersPanel
-              timers={timers}
-              onClearAll={timerActions.clearAllTimers}
-              onClearTimer={timerActions.clearTimer}
-              onActivateTimer={(tabId) => {
-                void sendExtensionMessage({ type: "switchTab", tabId }).then(requestClose);
-              }}
-            />
-          )}
-
-          <div
-            class={cn(
-              "flex min-h-0 min-w-0 flex-1",
-              layout === "overlay" ? "gap-[var(--zen-space-6)]" : "flex-col",
+            {!swapsViews && showTimers && (
+              <ActiveTimersPanel
+                timers={timers}
+                onClearAll={timerActions.clearAllTimers}
+                onClearTimer={timerActions.clearTimer}
+                onActivateTimer={(tabId) => {
+                  void sendExtensionMessage({ type: "switchTab", tabId }).then(requestClose);
+                }}
+              />
             )}
-            data-omnibar-columns
-            // Kept mounted under a view so the lists keep their scroll and selection.
-            style={view ? { display: "none" } : undefined}
-          >
-            {/* Scrolls inside the frame, so the status bar stays in view under it. */}
-            <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-              <div
-                class={cn(
-                  "flex min-h-0 min-w-0 flex-1 flex-col",
-                  nestedPanes && "zs-card p-[var(--zen-space-5)]",
-                )}
-                data-testid="zen-tab-pane"
-              >
-                {layout === "overlay" && (
-                  <div class="zs-head">
-                    <strong class="min-w-0 truncate font-[inherit] font-medium">Tabs</strong>
-                    {showTabCollapse ? (
-                      <span class="zs-head-split">
+
+            <div
+              class={cn(
+                "flex min-h-0 min-w-0 flex-1",
+                layout === "overlay" ? "gap-[var(--zen-space-6)]" : "flex-col",
+              )}
+              data-omnibar-columns
+              // Kept mounted under a view so the lists keep their scroll and selection.
+              style={view ? { display: "none" } : undefined}
+            >
+              {/* Scrolls inside the frame, so the status bar stays in view under it. */}
+              <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+                <div
+                  class={cn(
+                    "flex min-h-0 min-w-0 flex-1 flex-col",
+                    nestedPanes && "zs-card p-[var(--zen-space-5)]",
+                  )}
+                  data-testid="zen-tab-pane"
+                >
+                  {layout === "overlay" && (
+                    <div class="zs-head">
+                      <strong class="min-w-0 truncate font-[inherit] font-medium">Tabs</strong>
+                      {showTabCollapse ? (
+                        <span class="zs-head-split">
+                          <span class="zs-head-rule" aria-hidden="true" />
+                          <CollapseAllButton
+                            collapsed={tabsAllCollapsed}
+                            onToggle={onToggleAllTabs}
+                            testId="zen-collapse-tabs"
+                          />
+                          <span class="zs-head-rule" aria-hidden="true" />
+                        </span>
+                      ) : (
                         <span class="zs-head-rule" aria-hidden="true" />
-                        <CollapseAllButton
-                          collapsed={tabsAllCollapsed}
-                          onToggle={onToggleAllTabs}
-                          testId="zen-collapse-tabs"
-                        />
-                        <span class="zs-head-rule" aria-hidden="true" />
-                      </span>
-                    ) : (
-                      <span class="zs-head-rule" aria-hidden="true" />
+                      )}
+                      <TipText label={pluralize(tabCount, "tab")} class="text-zen-danger shrink-0">
+                        <span data-testid="zen-tab-count">{tabCount}</span>
+                      </TipText>
+                    </div>
+                  )}
+                  <ul
+                    class={cn(
+                      "zen-scroll zs-counter m-0 flex min-h-0 list-none flex-col overflow-y-auto",
+                      "gap-[var(--zen-section-gap)]",
+                      // Each section takes its share of the section gap as padding.
+                      "[&>li]:py-[var(--zen-section-pad)] [&>section>li]:py-[var(--zen-section-pad)]",
+                      "flex-1",
+                      layout !== "overlay" && "zs-card p-[var(--zen-space-5)]",
+                      compact && "min-h-[60px]",
                     )}
-                    <TipText label={pluralize(tabCount, "tab")} class="text-zen-danger shrink-0">
-                      <span data-testid="zen-tab-count">{tabCount}</span>
-                    </TipText>
+                    role="listbox"
+                  >
+                    <SearchResultsList
+                      groups={results.itemGroups}
+                      itemIndices={results.itemIndices}
+                      selectedIndex={navigation.selectedIndex}
+                      navigateForge={navigation.activePane !== "tabs"}
+                      displaySettings={displaySettings}
+                      collapsedFolders={results.collapsedFolders}
+                      onToggleFolder={tabFolderCollapse.toggle}
+                      timers={timers}
+                      todos={todos}
+                      statuses={statuses}
+                      timerTabId={timerTabId}
+                      statusMenuTabId={statusMenu?.tabId ?? null}
+                      registerOption={navigation.registerOption}
+                      onActivate={activateItem}
+                      onContextMenu={openContextMenu}
+                      onToggleTodo={onToggleTodo}
+                      onToggleTimerForm={onToggleTimerForm}
+                      onOpenTimerPopup={openTimer}
+                      onSetTimer={timerActions.setTimer}
+                      onClearTimer={timerActions.clearTimer}
+                      onOpenStatusMenu={toggleStatusMenu}
+                    />
+                  </ul>
+                </div>
+                {(loadError ||
+                  (results.matchedItems.length === 0 &&
+                    results.visibleTabs.length + spaces.length > 0)) && (
+                  <div class="text-zen-muted px-1 py-3 text-center text-xs">
+                    {loadError || "No tabs or spaces found."}
                   </div>
                 )}
-                <ul
-                  class={cn(
-                    "zen-scroll zs-counter m-0 flex min-h-0 list-none flex-col overflow-y-auto",
-                    "gap-[var(--zen-section-gap)]",
-                    // Each section takes its share of the section gap as padding.
-                    "[&>li]:py-[var(--zen-section-pad)] [&>section>li]:py-[var(--zen-section-pad)]",
-                    "flex-1",
-                    layout !== "overlay" && "zs-card p-[var(--zen-space-5)]",
-                    compact && "min-h-[60px]",
-                  )}
-                  role="listbox"
-                >
-                  <SearchResultsList
-                    groups={results.itemGroups}
-                    itemIndices={results.itemIndices}
-                    selectedIndex={navigation.selectedIndex}
-                    navigateForge={navigation.activePane !== "tabs"}
-                    displaySettings={displaySettings}
-                    collapsedFolders={results.collapsedFolders}
-                    onToggleFolder={tabFolderCollapse.toggle}
-                    timers={timers}
-                    todos={todos}
-                    statuses={statuses}
-                    timerTabId={timerTabId}
-                    statusMenuTabId={statusMenu?.tabId ?? null}
-                    registerOption={navigation.registerOption}
-                    onActivate={activateItem}
-                    onContextMenu={openContextMenu}
-                    onToggleTodo={onToggleTodo}
-                    onToggleTimerForm={onToggleTimerForm}
-                    onOpenTimerPopup={openTimer}
-                    onSetTimer={timerActions.setTimer}
-                    onClearTimer={timerActions.clearTimer}
-                    onOpenStatusMenu={toggleStatusMenu}
-                  />
-                </ul>
+                {!loadError && tabs.length + spaces.length === 0 && (
+                  <div class="text-zen-muted px-1 py-3 text-center text-xs">
+                    Loading tabs and spaces…
+                  </div>
+                )}
               </div>
-              {(loadError ||
-                (results.matchedItems.length === 0 &&
-                  results.visibleTabs.length + spaces.length > 0)) && (
-                <div class="text-zen-muted px-1 py-3 text-center text-xs">
-                  {loadError || "No tabs or spaces found."}
-                </div>
+
+              {layout === "overlay" && showForgeColumn && (
+                <ForgeIssueNavigator
+                  entries={results.listedForgeIssueEntries}
+                  truncate={displaySettings.truncateIssueTitles}
+                  sortMode={forgeSortMode}
+                  keyboardEntries={results.navigatorEntries}
+                  kindFilter={results.effectiveKindFilter}
+                  kindCounts={results.forgeKindCounts}
+                  requestsLabel={results.requestsLabel}
+                  onKindFilterChange={(filter) => {
+                    setForgeKindFilter(filter);
+                    navigation.setSelectedForgeIndex(0);
+                  }}
+                  collapsed={results.forgeTreeCollapsed}
+                  onToggleGroup={forgeCollapse.toggle}
+                  allCollapsed={forgeAllCollapsed}
+                  onToggleAll={showForgeCollapse ? onToggleAllForge : undefined}
+                  selectedIndex={
+                    navigation.activePane === "forge" ? navigation.selectedForgeIndex : -1
+                  }
+                  onActivate={activateForgeEntry}
+                  onOpenProject={(url) => {
+                    const tab = tabs.find((item) => tabMatchesForgeProjectHome(item.url, url));
+                    if (tab && isActivatableTab(tab)) {
+                      activateTab(tabBrowserId(tab), tab.domId, "project tab");
+                      return;
+                    }
+                    void sendExtensionMessage({ type: "openUrl", url })
+                      .then(requestClose)
+                      .catch((error) => debugError("Could not open project:", error));
+                  }}
+                  onSelect={navigation.setSelectedForgeIndex}
+                  onSortChange={(mode) => {
+                    sound.play("tick");
+                    setForgeSortMode(mode);
+                    navigation.setSelectedForgeIndex(0);
+                  }}
+                  onContextMenu={openContextMenu}
+                  timers={timers}
+                  todos={todos}
+                  timerTabId={timerTabId}
+                  onToggleTodo={onToggleTodo}
+                  onToggleTimerForm={onToggleTimerForm}
+                  onOpenTimerPopup={openTimer}
+                  onSetTimer={timerActions.setTimer}
+                  onClearTimer={timerActions.clearTimer}
+                  statuses={statuses}
+                  statusMenuTabId={statusMenu?.tabId ?? null}
+                  onOpenStatusMenu={toggleStatusMenu}
+                  displaySettings={displaySettings}
+                  onOrganize={(mode: ForgeOrganizeMode) => {
+                    sound.play("tick");
+                    const tabIds = tabBrowserIds(
+                      results.listedForgeIssueEntries.map((entry) => entry.tab),
+                    );
+                    void sendExtensionMessage({
+                      type: "organizeForgeIssueTabs",
+                      mode,
+                      tabIds,
+                    }).catch((error) => debugError("Could not organize issue tabs:", error));
+                  }}
+                  onConfirmOrganizeChange={(confirm) => {
+                    const next = { ...displaySettings, confirmOrganizeForgeTabs: confirm };
+                    setDisplaySettings(next);
+                    void saveDisplaySettings(next).catch((error) =>
+                      debugError("Could not save organize confirmation:", error),
+                    );
+                  }}
+                />
               )}
-              {!loadError && tabs.length + spaces.length === 0 && (
-                <div class="text-zen-muted px-1 py-3 text-center text-xs">
-                  Loading tabs and spaces…
+              {layout === "overlay" && showRightColumn && (
+                <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--zen-space-6)]">
+                  {showTodoColumn && (
+                    <TodoNavigator
+                      tabs={todoTabs}
+                      allTabs={results.allTodoTabs}
+                      statuses={statuses}
+                      statusMenuTabId={statusMenu?.tabId ?? null}
+                      truncate={displaySettings.truncateIssueTitles}
+                      selectedIndex={
+                        navigation.activePane === "todos" ? navigation.selectedTodoIndex : -1
+                      }
+                      onActivate={activateTodoTab}
+                      onSelect={navigation.setSelectedTodoIndex}
+                      onDone={(tab) => {
+                        const tabId = tabBrowserId(tab);
+                        if (tabId !== undefined) {
+                          sound.play("success");
+                          todoActions.setTodo(tabId, "none");
+                        }
+                      }}
+                      onClear={(tabIds, close) => {
+                        sound.play("success");
+                        todoActions.clearTodos(tabIds, close);
+                      }}
+                      onOpenStatusMenu={toggleStatusMenu}
+                      onContextMenu={openContextMenu}
+                      onReorder={
+                        results.todoNavigatorQuery.active
+                          ? undefined
+                          : (ids) => {
+                              todoOrder.setOrder(ids);
+                              const selected = todoTabs[navigation.selectedTodoIndex];
+                              const selectedId = selected ? tabBrowserId(selected) : undefined;
+                              if (selectedId === undefined) return;
+                              const nextIndex = ids.indexOf(selectedId);
+                              if (nextIndex >= 0) {
+                                navigation.setSelectedTodoIndex(nextIndex);
+                              }
+                            }
+                      }
+                    />
+                  )}
+                  {showTimersDock && (
+                    <TimersDock
+                      timers={timers}
+                      onClearAll={timerActions.clearAllTimers}
+                      onClearTimer={timerActions.clearTimer}
+                      onActivateTimer={(tabId) => {
+                        const tab = tabs.find((item) => tabBrowserId(item) === tabId);
+                        activateTab(tabId, tab?.domId, "timer tab");
+                      }}
+                      onEditTimer={openTimer}
+                    />
+                  )}
                 </div>
               )}
             </div>
 
-            {layout === "overlay" && showForgeColumn && (
-              <ForgeIssueNavigator
-                entries={results.listedForgeIssueEntries}
-                truncate={displaySettings.truncateIssueTitles}
-                sortMode={forgeSortMode}
-                keyboardEntries={results.navigatorEntries}
-                kindFilter={results.effectiveKindFilter}
-                kindCounts={results.forgeKindCounts}
-                requestsLabel={results.requestsLabel}
-                onKindFilterChange={(filter) => {
-                  setForgeKindFilter(filter);
-                  navigation.setSelectedForgeIndex(0);
+            <StatusBar always={displaySettings.statusBar} />
+
+            {statusMenu && (
+              <TrafficLightMenu
+                x={statusMenu.x}
+                y={statusMenu.y}
+                light={statuses.get(statusMenu.tabId)}
+                onSelect={(light) => {
+                  setStatusMenu(null);
+                  statusActions.setStatus(statusMenu.tabId, light);
                 }}
-                collapsed={results.forgeTreeCollapsed}
-                onToggleGroup={forgeCollapse.toggle}
-                allCollapsed={forgeAllCollapsed}
-                onToggleAll={showForgeCollapse ? onToggleAllForge : undefined}
-                selectedIndex={
-                  navigation.activePane === "forge" ? navigation.selectedForgeIndex : -1
-                }
-                onActivate={activateForgeEntry}
-                onOpenProject={(url) => {
-                  const tab = tabs.find((item) => tabMatchesForgeProjectHome(item.url, url));
-                  if (tab && isActivatableTab(tab)) {
-                    activateTab(tabBrowserId(tab), tab.domId, "project tab");
-                    return;
+              />
+            )}
+
+            {displaySettings.tags && tagState.menu && (
+              <TagMenu
+                key={tagState.menu.tabId}
+                x={tagState.menu.x}
+                y={tagState.menu.y}
+                tags={tagState.tags}
+                assignedIds={tabTags.get(tagState.menu.tabId) ?? []}
+                onToggle={(tagId) => {
+                  if (tagState.menu === null) return;
+                  sound.play("tick");
+                  tagState.toggleTag(tagState.menu.tabId, tagId);
+                }}
+                onCreate={(name) => {
+                  if (tagState.menu === null) return;
+                  sound.play("mark");
+                  tagState.createAndAssign(tagState.menu.tabId, name);
+                }}
+                onSetColor={(tagId, color) => {
+                  sound.play("tick");
+                  tagState.recolor(tagId, color);
+                }}
+                onDelete={(tagId) => {
+                  sound.play("success");
+                  tagState.remove(tagId);
+                }}
+              />
+            )}
+
+            {contextMenu && (
+              <TabContextMenu
+                tab={contextMenu.tab}
+                x={contextMenu.x}
+                y={contextMenu.y}
+                isTodo={todos.has(tabBrowserId(contextMenu.tab) ?? -1)}
+                light={statuses.get(tabBrowserId(contextMenu.tab) ?? -1)}
+                actions={{
+                  todos: displaySettings.todos,
+                  copyLink: displaySettings.copyLink,
+                  timers: displaySettings.timers,
+                  statusColors: displaySettings.statusColors,
+                  hosts: displaySettings.hosts,
+                }}
+                onRename={() => {
+                  rename.open(contextMenu.tab, stripTimerPrefixFromTab(contextMenu.tab));
+                  setContextMenu(null);
+                }}
+                onCopyLink={() => {
+                  const url = contextMenu.tab.url;
+                  setContextMenu(null);
+                  if (url) {
+                    void copyText(url);
                   }
-                  void sendExtensionMessage({ type: "openUrl", url })
-                    .then(requestClose)
-                    .catch((error) => debugError("Could not open project:", error));
                 }}
-                onSelect={navigation.setSelectedForgeIndex}
-                onSortChange={(mode) => {
-                  sound.play("tick");
-                  setForgeSortMode(mode);
-                  navigation.setSelectedForgeIndex(0);
+                onOpenTimer={(tabId) => {
+                  setContextMenu(null);
+                  openTimer(tabId);
                 }}
-                onContextMenu={openContextMenu}
-                timers={timers}
-                todos={todos}
-                timerTabId={timerTabId}
-                onToggleTodo={onToggleTodo}
-                onToggleTimerForm={onToggleTimerForm}
-                onOpenTimerPopup={openTimer}
-                onSetTimer={timerActions.setTimer}
-                onClearTimer={timerActions.clearTimer}
-                statuses={statuses}
-                statusMenuTabId={statusMenu?.tabId ?? null}
-                onOpenStatusMenu={toggleStatusMenu}
-                displaySettings={displaySettings}
-                onOrganize={(mode: ForgeOrganizeMode) => {
-                  sound.play("tick");
-                  const tabIds = tabBrowserIds(
-                    results.listedForgeIssueEntries.map((entry) => entry.tab),
-                  );
-                  void sendExtensionMessage({ type: "organizeForgeIssueTabs", mode, tabIds }).catch(
-                    (error) => debugError("Could not organize issue tabs:", error),
+                onOpenHostOverrides={(tabId) => {
+                  setContextMenu(null);
+                  openHostOverrides(tabId);
+                }}
+                onSetTodo={(status) => {
+                  const tabId = tabBrowserId(contextMenu.tab);
+                  if (tabId !== undefined) {
+                    sound.play(status === "none" ? "success" : "mark");
+                    todoActions.setTodo(tabId, status);
+                  }
+                }}
+                onSetLight={(light) => {
+                  const tabId = tabBrowserId(contextMenu.tab);
+                  setContextMenu(null);
+                  if (tabId !== undefined) {
+                    statusActions.setStatus(tabId, light);
+                  }
+                }}
+                onCloseTab={(tabId) => {
+                  setContextMenu(null);
+                  void sendExtensionMessage({ type: "closeTab", tabId }).catch((error) =>
+                    debugError("Could not close tab:", error),
                   );
                 }}
-                onConfirmOrganizeChange={(confirm) => {
-                  const next = { ...displaySettings, confirmOrganizeForgeTabs: confirm };
-                  setDisplaySettings(next);
-                  void saveDisplaySettings(next).catch((error) =>
-                    debugError("Could not save organize confirmation:", error),
+                onEditPinnedUrl={(tabId) => {
+                  const tab = contextMenu.tab;
+                  setContextMenu(null);
+                  setPinnedUrlDialog({ tab, tabId, value: tab.url, error: null });
+                  void sendExtensionMessage({ type: "getPinnedUrl", tabId })
+                    .then((url) => {
+                      setPinnedUrlDialog((current) =>
+                        current?.tabId === tabId
+                          ? { ...current, value: url || current.value }
+                          : current,
+                      );
+                    })
+                    .catch((error) => debugError("Could not read pinned URL:", error));
+                }}
+                onReplacePinnedUrl={(tabId) => {
+                  setContextMenu(null);
+                  void sendExtensionMessage({ type: "replacePinnedUrlWithCurrent", tabId }).catch(
+                    (error) => debugError("Could not replace pinned URL:", error),
+                  );
+                }}
+                onMoveToFolder={(tabId, folderId) => {
+                  setContextMenu(null);
+                  void sendExtensionMessage({ type: "moveTabToFolder", tabId, folderId }).catch(
+                    (error) => debugError("Could not move tab to folder:", error),
+                  );
+                }}
+                onRemoveFromFolder={(tabId) => {
+                  setContextMenu(null);
+                  void sendExtensionMessage({ type: "removeTabFromFolder", tabId }).catch((error) =>
+                    debugError("Could not remove tab from folder:", error),
                   );
                 }}
               />
             )}
-            {layout === "overlay" && showRightColumn && (
-              <div class="flex min-h-0 min-w-0 flex-1 flex-col gap-[var(--zen-space-6)]">
-                {showTodoColumn && (
-                  <TodoNavigator
-                    tabs={todoTabs}
-                    allTabs={results.allTodoTabs}
-                    folders={todoFolders.state}
-                    statuses={statuses}
-                    statusMenuTabId={statusMenu?.tabId ?? null}
-                    truncate={displaySettings.truncateIssueTitles}
-                    selectedIndex={
-                      navigation.activePane === "todos" ? navigation.selectedTodoIndex : -1
-                    }
-                    onActivate={activateTodoTab}
-                    onSelect={navigation.setSelectedTodoIndex}
-                    onDone={(tab) => {
-                      const tabId = tabBrowserId(tab);
-                      if (tabId !== undefined) {
-                        sound.play("success");
-                        todoActions.setTodo(tabId, "none");
-                      }
-                    }}
-                    onClear={(tabIds, close) => {
-                      sound.play("success");
-                      todoActions.clearTodos(tabIds, close);
-                    }}
-                    onOpenStatusMenu={toggleStatusMenu}
-                    onContextMenu={openContextMenu}
-                    onFoldersChange={todoFolders.setState}
-                    onReorder={
-                      results.todoNavigatorQuery.active
-                        ? undefined
-                        : (ids) => {
-                            const groupedIds = todoFolders.state.folders.flatMap(
-                              (folder) => todoFolders.state.members[folder.id] ?? [],
-                            );
-                            const nextOrder =
-                              groupedIds.length > 0
-                                ? [...groupedIds.filter((id) => !ids.includes(id)), ...ids]
-                                : ids;
-                            todoOrder.setOrder(nextOrder);
-                            const selected = keyboardTodoTabs[navigation.selectedTodoIndex];
-                            const selectedId = selected ? tabBrowserId(selected) : undefined;
-                            if (selectedId === undefined) return;
-                            const nextVisible = visibleTodoTabs(
-                              applyTodoOrder(todoTabs, nextOrder),
-                              todoFolders.state,
-                              false,
-                            );
-                            const nextIndex = nextVisible.findIndex(
-                              (tab) => tabBrowserId(tab) === selectedId,
-                            );
-                            if (nextIndex >= 0) {
-                              navigation.setSelectedTodoIndex(nextIndex);
-                            }
-                          }
-                    }
-                  />
-                )}
-                {showTimersDock && (
-                  <TimersDock
-                    timers={timers}
-                    onClearAll={timerActions.clearAllTimers}
-                    onClearTimer={timerActions.clearTimer}
-                    onActivateTimer={(tabId) => {
-                      const tab = tabs.find((item) => tabBrowserId(item) === tabId);
-                      activateTab(tabId, tab?.domId, "timer tab");
-                    }}
-                    onEditTimer={openTimer}
-                  />
-                )}
-              </div>
+
+            {pinnedUrlDialog && (
+              <EditPinnedUrlDialog
+                value={pinnedUrlDialog.value}
+                error={pinnedUrlDialog.error}
+                onChange={(value) => setPinnedUrlDialog({ ...pinnedUrlDialog, value, error: null })}
+                onCancel={() => setPinnedUrlDialog(null)}
+                onSubmit={(value) => {
+                  const url = parsePinnedUrl(value);
+                  if (!url) {
+                    setPinnedUrlDialog({ ...pinnedUrlDialog, error: "Enter a valid http(s) URL." });
+                    return;
+                  }
+                  const tabId = pinnedUrlDialog.tabId;
+                  setPinnedUrlDialog(null);
+                  void sendExtensionMessage({ type: "setPinnedUrl", tabId, url }).catch((error) =>
+                    debugError("Could not set pinned URL:", error),
+                  );
+                }}
+              />
             )}
-          </div>
 
-          <StatusBar always={displaySettings.statusBar} />
-
-          {statusMenu && (
-            <TrafficLightMenu
-              x={statusMenu.x}
-              y={statusMenu.y}
-              light={statuses.get(statusMenu.tabId)}
-              onSelect={(light) => {
-                setStatusMenu(null);
-                statusActions.setStatus(statusMenu.tabId, light);
-              }}
-            />
-          )}
-
-          {contextMenu && (
-            <TabContextMenu
-              tab={contextMenu.tab}
-              x={contextMenu.x}
-              y={contextMenu.y}
-              isTodo={todos.has(tabBrowserId(contextMenu.tab) ?? -1)}
-              light={statuses.get(tabBrowserId(contextMenu.tab) ?? -1)}
-              actions={{
-                todos: displaySettings.todos,
-                copyLink: displaySettings.copyLink,
-                timers: displaySettings.timers,
-                statusColors: displaySettings.statusColors,
-                hosts: displaySettings.hosts,
-              }}
-              onRename={() => {
-                rename.open(contextMenu.tab, stripTimerPrefixFromTab(contextMenu.tab));
-                setContextMenu(null);
-              }}
-              onCopyLink={() => {
-                const url = contextMenu.tab.url;
-                setContextMenu(null);
-                if (url) {
-                  void copyText(url);
-                }
-              }}
-              onOpenTimer={(tabId) => {
-                setContextMenu(null);
-                openTimer(tabId);
-              }}
-              onOpenHostOverrides={(tabId) => {
-                setContextMenu(null);
-                openHostOverrides(tabId);
-              }}
-              onSetTodo={(status) => {
-                const tabId = tabBrowserId(contextMenu.tab);
-                if (tabId !== undefined) {
-                  sound.play(status === "none" ? "success" : "mark");
-                  todoActions.setTodo(tabId, status);
-                }
-              }}
-              onSetLight={(light) => {
-                const tabId = tabBrowserId(contextMenu.tab);
-                setContextMenu(null);
-                if (tabId !== undefined) {
-                  statusActions.setStatus(tabId, light);
-                }
-              }}
-              onCloseTab={(tabId) => {
-                setContextMenu(null);
-                void sendExtensionMessage({ type: "closeTab", tabId }).catch((error) =>
-                  debugError("Could not close tab:", error),
-                );
-              }}
-              onEditPinnedUrl={(tabId) => {
-                const tab = contextMenu.tab;
-                setContextMenu(null);
-                setPinnedUrlDialog({ tab, tabId, value: tab.url, error: null });
-                void sendExtensionMessage({ type: "getPinnedUrl", tabId })
-                  .then((url) => {
-                    setPinnedUrlDialog((current) =>
-                      current?.tabId === tabId
-                        ? { ...current, value: url || current.value }
-                        : current,
-                    );
-                  })
-                  .catch((error) => debugError("Could not read pinned URL:", error));
-              }}
-              onReplacePinnedUrl={(tabId) => {
-                setContextMenu(null);
-                void sendExtensionMessage({ type: "replacePinnedUrlWithCurrent", tabId }).catch(
-                  (error) => debugError("Could not replace pinned URL:", error),
-                );
-              }}
-              onMoveToFolder={(tabId, folderId) => {
-                setContextMenu(null);
-                void sendExtensionMessage({ type: "moveTabToFolder", tabId, folderId }).catch(
-                  (error) => debugError("Could not move tab to folder:", error),
-                );
-              }}
-              onRemoveFromFolder={(tabId) => {
-                setContextMenu(null);
-                void sendExtensionMessage({ type: "removeTabFromFolder", tabId }).catch((error) =>
-                  debugError("Could not remove tab from folder:", error),
-                );
-              }}
-            />
-          )}
-
-          {pinnedUrlDialog && (
-            <EditPinnedUrlDialog
-              value={pinnedUrlDialog.value}
-              error={pinnedUrlDialog.error}
-              onChange={(value) => setPinnedUrlDialog({ ...pinnedUrlDialog, value, error: null })}
-              onCancel={() => setPinnedUrlDialog(null)}
-              onSubmit={(value) => {
-                const url = parsePinnedUrl(value);
-                if (!url) {
-                  setPinnedUrlDialog({ ...pinnedUrlDialog, error: "Enter a valid http(s) URL." });
-                  return;
-                }
-                const tabId = pinnedUrlDialog.tabId;
-                setPinnedUrlDialog(null);
-                void sendExtensionMessage({ type: "setPinnedUrl", tabId, url }).catch((error) =>
-                  debugError("Could not set pinned URL:", error),
-                );
-              }}
-            />
-          )}
-
-          {rename.dialog && (
-            <RenameTabDialog
-              tab={rename.dialog.tab}
-              value={rename.dialog.value}
-              error={rename.error}
-              onChange={rename.setValue}
-              onSubmit={rename.submit}
-              onCancel={rename.close}
-            />
-          )}
-        </>
-      )}
-    </SearchShell>
+            {rename.dialog && (
+              <RenameTabDialog
+                tab={rename.dialog.tab}
+                value={rename.dialog.value}
+                error={rename.error}
+                onChange={rename.setValue}
+                onSubmit={rename.submit}
+                onCancel={rename.close}
+              />
+            )}
+          </>
+        )}
+      </SearchShell>
+    </TagContext.Provider>
   );
 }

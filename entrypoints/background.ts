@@ -53,6 +53,7 @@ import {
 import { BRIDGE_TOKEN_STORAGE_KEY } from "@/shared/messaging/bridge-protocol";
 import { createTodoService } from "@/features/todos/background/todo-service";
 import { createStatusService } from "@/features/status/background/status-service";
+import { createTagService } from "@/features/tags/background/tag-service";
 import { detectForgeLabels } from "@/features/forge/background/label-command";
 import { getForgePageInfo } from "@/features/forge/background/page-info";
 import {
@@ -86,6 +87,7 @@ export default defineBackground(() => {
 
   const todoService = createTodoService();
   const statusService = createStatusService();
+  const tagService = createTagService();
   const hostOverrideService = createHostOverrideService();
   const updateService = createUpdateService();
   registerUpdateChecks(updateService);
@@ -98,6 +100,7 @@ export default defineBackground(() => {
       getSpaces,
       getTimers: timerService.getActiveTimers,
       getStatuses: statusService.getStatuses,
+      getTags: tagService.getTags,
       readLastOpened: readTabLastOpened,
       readTargetBranches: targetBranchService.read,
     }),
@@ -201,6 +204,7 @@ export default defineBackground(() => {
       void timerService.adoptRestoredTab(tab.id);
       void todoService.hydrate([tab.id]);
       void statusService.hydrate([tab.id]);
+      void tagService.hydrate([tab.id]);
       void hostOverrideService.load([tab.id]);
     }
   });
@@ -211,6 +215,7 @@ export default defineBackground(() => {
       return Promise.all([
         todoService.hydrate(tabIds),
         statusService.hydrate(tabIds),
+        tagService.hydrate(tabIds),
         hostOverrideService.load(tabIds),
       ]);
     })
@@ -224,6 +229,7 @@ export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId, removeInfo) => {
     todoService.forget(tabId);
     statusService.forget(tabId);
+    tagService.forget(tabId);
     hostOverrideService.forget(tabId);
     void timerService.handleTabRemoved(tabId, removeInfo.isWindowClosing);
   });
@@ -263,6 +269,14 @@ export default defineBackground(() => {
     },
     setTabStatus: async (tabId, light) => {
       await statusService.setStatus(tabId, light);
+      notify();
+    },
+    setTabTags: async (tabId, tagIds) => {
+      await tagService.setTags(tabId, tagIds);
+      notify();
+    },
+    removeTagFromTabs: async (tagId) => {
+      await tagService.removeTag(tagId);
       notify();
     },
     clearTodos: async (tabIds, close) => {

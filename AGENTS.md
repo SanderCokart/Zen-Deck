@@ -39,8 +39,8 @@ each violation so far has been a genuine misplacement.
 | `shared/`      | Wire protocol, domain types, logging, debug, `cn`, global styles                  |
 | `mcp/`         | Node MCP server (outside the extension bundle); may import `shared/` only         |
 
-Features: `search`, `timers`, `todos`, `status`, `forge`, `settings`, `zen`, `bridge`,
-`hosts`, `intercept`, `updates`.
+Features: `search`, `timers`, `todos`, `status`, `tags`, `forge`, `settings`, `zen`,
+`bridge`, `hosts`, `intercept`, `updates`.
 
 Inside a feature:
 
@@ -190,6 +190,13 @@ context menu and popup, and its own UI — all in one directory.
   `browser.sessions` values may not come back either, so timers find their tab
   after a restart by matching two of timer ID, URL and ⏱ label
   (`features/timers/model/timer-match.ts`).
+- **Tags are split in two.** Names and colours are a user setting in storage.local
+  (`tagDefinitions`, backed up); the tag IDs on each tab live in that tab's session
+  data, like status colours. Deleting a tag only reaches tabs the background has
+  read, so readers skip IDs not in the list (`resolveTabTags`). Tags are a todo
+  feature: the tag key and chips appear on todo rows only, not on tab rows or
+  issue entries. They get their state from `TagContext`, which is null while the
+  Tags flag is off.
 - **Essential tabs have no writable Zen label**, so the extension stores its own
   names under the `essentialTabNames` storage key, keyed by DOM id.
 - **`noUncheckedIndexedAccess` is on.** Indexing an array gives `T | undefined`.

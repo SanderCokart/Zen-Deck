@@ -85,6 +85,7 @@ describe("parseExtensionSuccess", () => {
       spaces: [{ id: "space-a", name: "", isActive: false }],
       timers: [{ timerId: "t1", tabId: 1, endAt: 1, originalLabel: "", title: "", url: "" }],
       statuses: [],
+      tags: [],
     });
   });
 

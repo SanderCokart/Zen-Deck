@@ -22,6 +22,7 @@ describe("createSnapshotReader", () => {
       spaces: [{ id: "space-a", name: "Work", isActive: true }],
       timers: [{ timerId: "t1", tabId: 1, endAt: 99, originalLabel: "", title: "Tab", url: "" }],
       statuses: [],
+      tags: [],
     });
   });
 
@@ -88,6 +89,7 @@ describe("createCachedSnapshotReader", () => {
       timers: [],
       todos: [],
       statuses: [],
+      tags: [],
     }));
     const cache = createCachedSnapshotReader(read);
 

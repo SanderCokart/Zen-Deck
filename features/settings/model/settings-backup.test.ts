@@ -10,13 +10,11 @@ describe("settings backup", () => {
     const text = serializeSettingsBackup({
       displaySettings: { fontSize: 14 },
       mcpBridgeToken: "token",
-      todoFolders: { folders: [{ id: "a", name: "Inbox" }], members: { a: [1] } },
       tabTimers: [{ tabId: 1 }],
     });
     expect(parseSettingsBackup(text)).toEqual({
       displaySettings: { fontSize: 14 },
       mcpBridgeToken: "token",
-      todoFolders: { folders: [{ id: "a", name: "Inbox" }], members: { a: [1] } },
     });
   });
 

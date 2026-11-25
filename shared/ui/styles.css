@@ -674,64 +674,6 @@
     border-radius: var(--zen-radius);
   }
 
-  /*
-   * Todo-column drop well: collapsed to nothing until a drag hovers the
-   * folder, then a striped accent frame with a transparent fill.
-   */
-  .zs-todo-drop-well {
-    display: grid;
-    grid-template-rows: 0fr;
-    opacity: 0;
-    pointer-events: none;
-    transition:
-      grid-template-rows 160ms ease,
-      opacity 160ms ease;
-  }
-
-  .zs-todo-drop-well-pad {
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .zs-todo-drop-well-body {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-height: calc(var(--zen-row-height) * 2);
-    margin-top: var(--zen-todo-gap);
-    padding: var(--zen-space-3);
-    border: var(--zen-space-1) solid transparent;
-    border-radius: var(--zen-radius-lg);
-    color: var(--zs-red-ink);
-    font-family: var(--font-mono);
-    font-size: var(--zen-text-xs);
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    background:
-      color-mix(in srgb, var(--zs-red) 12%, transparent) padding-box,
-      repeating-linear-gradient(
-          -45deg,
-          color-mix(in srgb, var(--zs-red) 80%, transparent) 0 var(--zen-space-1),
-          transparent var(--zen-space-1) calc(var(--zen-space-1) * 2)
-        )
-        border-box;
-    background-clip: padding-box, border-box;
-    background-origin: padding-box, border-box;
-  }
-
-  [data-dragging] [data-todo-folder-well]:hover .zs-todo-drop-well,
-  [data-todo-folder-well][data-todo-drop-active] .zs-todo-drop-well {
-    grid-template-rows: 1fr;
-    opacity: 1;
-    pointer-events: auto;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .zs-todo-drop-well {
-      transition: none;
-    }
-  }
-
   /* A sub-folder heading: the same, without a number. */
   .zs-section-label[data-sub] {
     height: calc(var(--zen-row-height) * 0.9);
@@ -741,6 +683,216 @@
 
   .zs-section-label[data-sub]::before {
     content: none;
+  }
+
+  /*
+   * Tags: a chip tinted by its colour (set as --zs-tag-color inline), a round
+   * swatch, and the combobox menu that edits a tab's tags.
+   */
+  .zs-tag-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--zen-space-1);
+    max-width: 100%;
+    min-width: 0;
+    padding: calc(var(--zen-space-1) * 0.5) var(--zen-space-2);
+    border: 1px solid color-mix(in srgb, var(--zs-tag-color) 55%, transparent);
+    border-radius: 999px;
+    background-color: color-mix(in srgb, var(--zs-tag-color) 16%, transparent);
+    color: var(--zs-ink-1);
+    font-family: var(--font-mono);
+    font-size: var(--zen-text-xs);
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .zs-tag-chip::before {
+    content: "";
+    flex: none;
+    width: calc(var(--zen-font-size) * 0.5);
+    height: calc(var(--zen-font-size) * 0.5);
+    border-radius: 999px;
+    background-color: var(--zs-tag-color);
+  }
+
+  /* The chip's close key: a small x that takes the tag off the tab. */
+  /*
+   * A todo's bottom line (workspace, tags, actions) has a fixed height: that of
+   * its icon keys. Chips fit inside it, so adding a tag never moves the row.
+   */
+  .zs-todo-meta {
+    --zs-todo-meta-height: calc(var(--zen-icon-sm) + var(--zen-space-1));
+    height: var(--zs-todo-meta-height);
+  }
+
+  .zs-todo-meta .zs-tag-chip {
+    box-sizing: border-box;
+    height: var(--zs-todo-meta-height);
+    padding-block: 0;
+  }
+
+  /* On a todo's action line chips never squash; the line clips the ones that do not fit. */
+  .zs-tag-chips-line > .zs-tag-chip {
+    flex: none;
+  }
+
+  .zs-tag-chip-remove {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    margin-right: calc(var(--zen-space-1) * -0.5);
+    padding: 0;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: var(--zs-ink-3);
+    cursor: pointer;
+    font: inherit;
+    line-height: 1;
+  }
+
+  .zs-tag-chip-remove > .zen-icon {
+    width: calc(var(--zen-font-size) * 0.85);
+    height: calc(var(--zen-font-size) * 0.85);
+    stroke-width: 2.5;
+  }
+
+  .zs-tag-chip-remove:hover,
+  .zs-tag-chip-remove:focus-visible {
+    background-color: color-mix(in srgb, var(--zs-tag-color) 35%, transparent);
+    color: var(--zs-ink-1);
+  }
+
+  .zs-tag-chip-remove:focus-visible {
+    outline: 2px solid var(--zs-red);
+    outline-offset: 1px;
+  }
+
+  .zs-tag-swatch {
+    display: block;
+    width: var(--zen-icon-sm);
+    height: var(--zen-icon-sm);
+    border-radius: 999px;
+    background-color: var(--zs-tag-color);
+    box-shadow: inset 0 0 0 1px rgb(0 0 0 / 18%);
+  }
+
+  .zs-tag-swatch-button {
+    display: grid;
+    flex: none;
+    place-items: center;
+    padding: calc(var(--zen-space-1) * 0.5);
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .zs-tag-swatch-button:hover,
+  .zs-tag-swatch-button[aria-checked="true"],
+  .zs-tag-swatch-button[aria-expanded="true"] {
+    box-shadow: 0 0 0 2px var(--zs-ink-2);
+  }
+
+  .zs-tag-menu {
+    width: calc(var(--zen-font-size) * 20);
+    max-width: calc(100vw - var(--zen-space-4));
+  }
+
+  .zs-tag-field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--zen-space-1);
+    min-height: calc(var(--zen-font-size) * 2.143);
+    padding: var(--zen-space-1) var(--zen-space-2);
+    border-radius: calc(var(--zen-font-size) * 0.214);
+    background: var(--zs-card);
+    cursor: text;
+  }
+
+  .zs-tag-input {
+    flex: 1;
+    min-width: calc(var(--zen-font-size) * 6);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--zs-ink-1);
+    font: 400 var(--zen-text-sm) / 1.4 var(--font-mono);
+    outline: none;
+  }
+
+  .zs-tag-input::placeholder {
+    color: var(--zs-ink-3);
+  }
+
+  .zs-tag-list {
+    display: grid;
+    gap: 1px;
+    max-height: calc(var(--zen-font-size) * 2.2 * 8);
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+
+  .zs-tag-option[data-active] {
+    background: var(--zs-card-hi);
+    color: var(--zs-ink-1);
+  }
+
+  .zs-tag-option[aria-selected="true"] {
+    color: var(--zs-ink-1);
+  }
+
+  .zs-tag-check {
+    display: inline-grid;
+    flex: none;
+    place-items: center;
+    width: var(--zen-icon-sm);
+    color: var(--zs-red-ink);
+    font-weight: 600;
+  }
+
+  .zs-tag-delete {
+    flex: none;
+    padding: 0 var(--zen-space-1);
+    border: 0;
+    border-radius: calc(var(--zen-font-size) * 0.214);
+    background: transparent;
+    color: var(--zs-ink-3);
+    cursor: pointer;
+    font: inherit;
+    opacity: 0;
+  }
+
+  .zs-tag-option:hover .zs-tag-delete,
+  .zs-tag-option[data-active] .zs-tag-delete,
+  .zs-tag-delete:focus-visible,
+  .zs-tag-delete-confirm {
+    opacity: 1;
+  }
+
+  .zs-tag-delete:hover,
+  .zs-tag-delete-confirm {
+    color: var(--zs-red-ink);
+  }
+
+  .zs-tag-palette {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--zen-space-1);
+    padding: var(--zen-space-1) var(--zen-space-2) var(--zen-space-2)
+      calc(var(--zen-icon-sm) + var(--zen-space-4));
+  }
+
+  .zs-tag-empty {
+    padding: var(--zen-space-2);
+    color: var(--zs-ink-3);
+    font-size: var(--zen-text-xs);
   }
 
   /* A sub-folder is its own outlined group, hung off its parent's guide line. */

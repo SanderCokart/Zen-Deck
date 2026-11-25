@@ -63,6 +63,11 @@ const SAFE_TOGGLES: readonly {
     hint: "Traffic lights on tab rows.",
   },
   {
+    key: "tags",
+    label: "Tags",
+    hint: "Coloured tags on todos, added from the tag key beside a todo's status light.",
+  },
+  {
     key: "mcp",
     label: "MCP bridge",
     hint: "Shows the MCP module on this page. Connecting still needs a token.",

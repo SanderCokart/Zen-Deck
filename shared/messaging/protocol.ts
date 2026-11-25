@@ -73,6 +73,12 @@ export const tabStatusSchema = v.object({
   light: v.picklist(TRAFFIC_LIGHTS),
 });
 
+/** The tags a tab has, as tag IDs. Names and colours live in storage.local under `tagDefinitions`. */
+export const tabTagsSchema = v.object({
+  tabId: tabIdSchema,
+  tagIds: v.array(v.pipe(v.string(), v.minLength(1))),
+});
+
 export const forgePageInfoSchema = v.object({
   title: v.optional(v.string()),
   bodyText: v.optional(v.string()),
@@ -263,6 +269,17 @@ export const extensionRequestSchema = v.variant("type", [
     light: v.picklist([...TRAFFIC_LIGHTS, "none"]),
   }),
   v.object({
+    type: v.literal("setTabTags"),
+    tabId: tabIdSchema,
+    /** The tab's whole tag list; empty clears it. */
+    tagIds: v.array(v.pipe(v.string(), v.minLength(1))),
+  }),
+  v.object({
+    type: v.literal("removeTagFromTabs"),
+    /** A deleted tag, taken off every tab that has it. */
+    tagId: v.pipe(v.string(), v.minLength(1)),
+  }),
+  v.object({
     type: v.literal("clearTodos"),
     /** The todo tabs to mark done, as the todo column chose them. */
     tabIds: v.array(tabIdSchema),
@@ -437,6 +454,7 @@ export const searchSnapshotSchema = v.object({
   spaces: v.array(spaceInfoSchema),
   timers: v.array(tabTimerSchema),
   statuses: v.fallback(v.array(tabStatusSchema), []),
+  tags: v.fallback(v.array(tabTagsSchema), []),
 });
 
 export const EXTENSION_REQUEST_TYPES = [
@@ -457,6 +475,8 @@ export const EXTENSION_REQUEST_TYPES = [
   "setTabLabel",
   "setTodo",
   "setTabStatus",
+  "setTabTags",
+  "removeTagFromTabs",
   "clearTodos",
   "getHostOverrides",
   "setHostOverrides",
@@ -497,6 +517,7 @@ export type SpaceInfo = v.InferOutput<typeof spaceInfoSchema>;
 export type TabTodo = v.InferOutput<typeof tabTodoSchema>;
 export type TodoStatus = (typeof TODO_STATUSES)[number];
 export type TabStatus = v.InferOutput<typeof tabStatusSchema>;
+export type TabTags = v.InferOutput<typeof tabTagsSchema>;
 export type TrafficLight = (typeof TRAFFIC_LIGHTS)[number];
 export type HostOverrideGroup = v.InferOutput<typeof hostOverrideGroupSchema>;
 export type HostProxyStatus = v.InferOutput<typeof hostProxyStatusSchema>;
@@ -537,6 +558,8 @@ export type ExtensionSuccessMap = {
   setTabLabel: void;
   setTodo: void;
   setTabStatus: void;
+  setTabTags: void;
+  removeTagFromTabs: void;
   clearTodos: void;
   getHostOverrides: HostOverrideGroup[];
   setHostOverrides: HostOverrideGroup[];
@@ -675,6 +698,8 @@ export function parseExtensionSuccess<T extends ExtensionRequestType>(
     case "setTabLabel":
     case "setTodo":
     case "setTabStatus":
+    case "setTabTags":
+    case "removeTagFromTabs":
     case "clearTodos":
       return undefined as ExtensionSuccessMap[T];
     case "getHostOverrides":

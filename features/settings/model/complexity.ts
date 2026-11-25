@@ -24,6 +24,7 @@ export const COMPLEXITY_FLAG_KEYS = [
   "contextMenu",
   "todos",
   "statusColors",
+  "tags",
   "mcp",
   "forgeTree",
   "hosts",
@@ -50,6 +51,7 @@ const SIMPLE_FLAGS: ComplexityFlags = {
   contextMenu: false,
   todos: false,
   statusColors: false,
+  tags: false,
   mcp: false,
   forgeTree: false,
   hosts: false,
@@ -72,6 +74,7 @@ const PRO_FLAGS: ComplexityFlags = {
   hideEssentialsInOverlay: false,
   todos: true,
   statusColors: true,
+  tags: true,
 };
 
 export const PRESETS: Record<ComplexityPresetId, ComplexityFlags> = {
@@ -84,7 +87,7 @@ export const PRESETS: Record<ComplexityPresetId, ComplexityFlags> = {
 /** Row actions that follow complexity flags. */
 export type TabActionFlags = Pick<
   DisplaySettings,
-  "todos" | "copyLink" | "timers" | "statusColors" | "hosts"
+  "todos" | "copyLink" | "timers" | "statusColors" | "tags" | "hosts"
 >;
 
 export function tabActionFlags(settings: DisplaySettings): TabActionFlags {
@@ -93,6 +96,7 @@ export function tabActionFlags(settings: DisplaySettings): TabActionFlags {
     copyLink: settings.copyLink,
     timers: settings.timers,
     statusColors: settings.statusColors,
+    tags: settings.tags,
     hosts: settings.hosts,
   };
 }
